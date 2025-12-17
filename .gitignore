@@ -3,3 +3,14 @@ __pycache__
 Dshell.egg-info
 build/
 .idea/
+
+# Coverage reports
+coverage.xml
+.coverage
+htmlcov/
+
+# pytest cache
+.pytest_cache/
+
+# SonarQube
+.scannerwork/
