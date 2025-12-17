@@ -12,6 +12,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate SonarQube secrets
+        run: |
+          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "::error::SONAR_TOKEN secret is not configured. Please add it in repository Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          if [ -z "${{ secrets.SONAR_HOST_URL }}" ]; then
+            echo "::error::SONAR_HOST_URL secret is not configured. Please add it in repository Settings > Secrets and variables > Actions. The URL must include the scheme (e.g., https://sonarcloud.io or https://your-sonar-server.com)."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -30,13 +41,12 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov coverage
+          pip install pytest pytest-cov coverage setuptools
           pip install -e .
 
       - name: Run tests with coverage
         run: |
-          pytest --cov=dshell --cov-report=xml --cov-report=term-missing tests/ || true
-        continue-on-error: true
+          pytest --cov=dshell --cov-report=xml --cov-report=term-missing tests/
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v4
