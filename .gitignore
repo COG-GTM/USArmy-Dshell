@@ -3,3 +3,61 @@ __pycache__
 Dshell.egg-info
 build/
 .idea/
+
+# Environment and secrets (NEVER commit these)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+credentials/
+
+# Security scanning artifacts
+.secrets.baseline
+.bandit
+bandit-report.json
+semgrep-results.json
+trivy-results.json
+safety-report.json
+
+# IDE and editor files
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Distribution and packaging
+dist/
+*.egg
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+logs/
+
+# GeoIP databases (large files, download separately)
+*.mmdb
+
+# SSL blacklist data (download from abuse.ch)
+sslblacklist.csv
+
+# OS-specific files
+.DS_Store
+Thumbs.db

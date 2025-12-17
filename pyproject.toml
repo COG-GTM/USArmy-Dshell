@@ -1,0 +1,116 @@
+# Dshell Project Configuration
+# DevSecOps best practices configuration
+
+[project]
+name = "Dshell"
+version = "3.2.3"
+description = "An extensible network forensic analysis framework"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "USArmyResearchLab"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Console",
+    "Topic :: Security",
+]
+
+[project.urls]
+Homepage = "https://github.com/USArmyResearchLab/Dshell"
+
+# Bandit security scanner configuration
+[tool.bandit]
+exclude_dirs = ["tests", "build", "dist", ".git", "__pycache__"]
+skips = ["B101"]  # Skip assert warnings in non-test code (used for debugging)
+targets = ["dshell"]
+
+[tool.bandit.assert_used]
+skips = ["*_test.py", "*test_*.py"]
+
+# Black code formatter configuration
+[tool.black]
+line-length = 120
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+# isort import sorting configuration
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["dshell"]
+skip = [".git", "__pycache__", "build", "dist"]
+
+# Pylint configuration
+[tool.pylint.main]
+ignore = ["tests", "build", "dist"]
+jobs = 0  # Use all available CPUs
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114",  # missing-module-docstring
+    "C0115",  # missing-class-docstring
+    "C0116",  # missing-function-docstring
+    "R0903",  # too-few-public-methods
+]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.design]
+max-args = 10
+
+# Security-focused pylint checks
+[tool.pylint."SECURITY"]
+# Enable security-related checks
+enable = [
+    "W0611",  # unused-import
+    "W0612",  # unused-variable
+    "W0613",  # unused-argument
+    "E1101",  # no-member
+]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+timeout = 300  # 5 minute timeout for tests
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["dshell"]
+omit = ["tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+# MyPy type checking configuration
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = ["tests", "build", "dist"]
