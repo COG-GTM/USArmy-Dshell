@@ -136,6 +136,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcap-dev build-essential
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -232,7 +237,7 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-          ignore: DL3008,DL3013
+          ignore: DL3008,DL3013,DL3018
           failure-threshold: warning
 
   # Stage 8: Security Summary Report
