@@ -1,6 +1,13 @@
 import dshell.core
 from dshell.util import printable_text
 from dshell.output.alertout import AlertOutput
+from dshell.security.validation import (
+    safe_compile_regex,
+    regex_search_with_timeout,
+    RegexValidationError,
+    RegexTimeoutError,
+    DEFAULT_REGEX_TIMEOUT,
+)
 
 import re
 import sys
@@ -17,6 +24,9 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
 Reconstructs streams and searches the content for a user-provided regular
 expression. Requires definition of the --search_expression argument. Additional
 options can be provided to alter behavior.
+
+Security: This plugin includes ReDoS (Regular Expression Denial of Service)
+protection with configurable timeout and pattern validation.
             """,
             output=AlertOutput(label=__name__),
             optiondict={
@@ -32,6 +42,14 @@ options can be provided to alter behavior.
                     "action": "store_true"},
                 "quiet": {
                     "help": "Do not display matches from this plugin. Useful when chaining plugins.",
+                    "action": "store_true"},
+                "regex_timeout": {
+                    "help": "Timeout in seconds for regex operations (default: 5.0)",
+                    "type": float,
+                    "default": DEFAULT_REGEX_TIMEOUT,
+                    "metavar": "SECONDS"},
+                "skip_validation": {
+                    "help": "Skip regex pattern validation (not recommended)",
                     "action": "store_true"}
             })
 
@@ -48,12 +66,31 @@ options can be provided to alter behavior.
         if self.ignorecase:
             re_flags = re_flags | re.IGNORECASE
 
-        # Create the regular expression
+        # Store timeout for use in connection_handler
+        self._regex_timeout = getattr(self, 'regex_timeout', DEFAULT_REGEX_TIMEOUT)
+        self._skip_validation = getattr(self, 'skip_validation', False)
+
+        # Create the regular expression with security validation
         try:
             # convert expression to bytes so it can accurately compare to
             # the connection data (which is also of type bytes)
             byte_expression = bytes(self.expression, 'utf-8')
-            self.regex = re.compile(byte_expression, re_flags)
+
+            # Use safe_compile_regex for ReDoS protection
+            self.regex = safe_compile_regex(
+                byte_expression,
+                flags=re_flags,
+                timeout=self._regex_timeout,
+                validate=not self._skip_validation
+            )
+        except RegexValidationError as e:
+            self.error("Regex validation failed: {0}".format(e))
+            self.error("Use --search_skip_validation to bypass (not recommended)")
+            sys.exit(1)
+        except RegexTimeoutError:
+            self.error("Regex compilation timed out after {0} seconds".format(self._regex_timeout))
+            self.error("Pattern may be too complex. Try simplifying or increase --search_regex_timeout")
+            sys.exit(1)
         except Exception as e:
             self.error("Could not compile regex ({0})".format(e))
             sys.exit(1)
@@ -64,12 +101,22 @@ options can be provided to alter behavior.
         """
         Go through the data of each connection.
         If anything is a hit, return the entire connection.
+
+        Security: Uses timeout-protected regex search to prevent ReDoS attacks.
         """
 
         match_found = False
         for blob in conn.blobs:
             for line in blob.data.splitlines():
-                match = self.regex.search(line)
+                try:
+                    # Use timeout-protected regex search
+                    match = regex_search_with_timeout(
+                        self.regex, line, timeout=self._regex_timeout
+                    )
+                except RegexTimeoutError:
+                    self.warn("Regex search timed out for connection {0}".format(conn.addr))
+                    continue
+
                 if match and self.invert:
                     return None
                 elif match and not self.invert:

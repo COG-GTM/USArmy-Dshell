@@ -1,0 +1,22 @@
+# Core dependencies for Dshell network forensic analysis framework
+# Pinned versions for reproducible builds and security
+
+# Packet capture and parsing
+pcapy-ng==1.0.9
+pypacker==5.4
+
+# SSL/TLS analysis
+pyOpenSSL==25.3.0
+
+# GeoIP lookups
+geoip2==5.2.0
+
+# Output formats
+elasticsearch==9.2.0
+tabulate==0.9.0
+
+# Transitive dependencies (pinned for security)
+maxminddb>=2.0.0
+certifi>=2023.7.22
+urllib3>=2.0.0
+cryptography>=41.0.0

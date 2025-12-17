@@ -1,0 +1,148 @@
+# Semgrep custom security rules for Dshell
+# Run with: semgrep --config .semgrep.yml dshell/
+
+rules:
+  # Detect potential ReDoS vulnerabilities in regex patterns
+  - id: regex-dos-prevention
+    patterns:
+      - pattern: re.compile($PATTERN, ...)
+      - pattern-not: re.compile($PATTERN, ..., timeout=...)
+    message: "Regex compilation without timeout protection. Consider using regex_with_timeout() from dshell.security.validation"
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-1333: Inefficient Regular Expression Complexity"
+      owasp: "A03:2021 - Injection"
+
+  # Detect hardcoded credentials
+  - id: hardcoded-credentials
+    patterns:
+      - pattern-either:
+          - pattern: $VAR = "...$PASSWORD..."
+          - pattern: $VAR = "...$SECRET..."
+          - pattern: $VAR = "...$API_KEY..."
+          - pattern: $VAR = "...$TOKEN..."
+    message: "Potential hardcoded credential detected. Use environment variables instead."
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+
+  # Detect unsafe file operations
+  - id: unsafe-file-path
+    patterns:
+      - pattern-either:
+          - pattern: open($PATH, ...)
+          - pattern: os.path.join($BASE, $USER_INPUT)
+    message: "Ensure file paths are properly validated to prevent path traversal attacks"
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-22: Path Traversal"
+
+  # Detect unsafe pickle usage
+  - id: unsafe-pickle
+    patterns:
+      - pattern-either:
+          - pattern: pickle.load(...)
+          - pattern: pickle.loads(...)
+    message: "Pickle deserialization can lead to arbitrary code execution. Use safer alternatives like JSON."
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+
+  # Detect unsafe subprocess usage
+  - id: unsafe-subprocess-shell
+    patterns:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+    message: "Using shell=True in subprocess can lead to command injection. Use shell=False with a list of arguments."
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+
+  # Detect unsafe eval/exec usage
+  - id: unsafe-eval-exec
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
+    message: "eval() and exec() can execute arbitrary code. Avoid using them with untrusted input."
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-94: Code Injection"
+
+  # Detect missing SSL certificate verification
+  - id: ssl-no-verify
+    patterns:
+      - pattern-either:
+          - pattern: requests.$METHOD(..., verify=False, ...)
+          - pattern: urllib3.disable_warnings(...)
+    message: "SSL certificate verification is disabled. This can lead to man-in-the-middle attacks."
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-295: Improper Certificate Validation"
+
+  # Detect potential SQL injection
+  - id: sql-injection
+    patterns:
+      - pattern-either:
+          - pattern: $CURSOR.execute($QUERY % ...)
+          - pattern: $CURSOR.execute($QUERY.format(...))
+          - pattern: $CURSOR.execute(f"...")
+    message: "Potential SQL injection vulnerability. Use parameterized queries instead."
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+
+  # Detect weak cryptographic algorithms
+  - id: weak-crypto
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+    message: "MD5 and SHA1 are considered weak for security purposes. Use SHA-256 or stronger."
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-328: Use of Weak Hash"
+      note: "SHA1 is used in sslblacklist.py for certificate fingerprinting which is acceptable for identification purposes"
+
+  # Detect bare except clauses
+  - id: bare-except
+    patterns:
+      - pattern: |
+          try:
+              ...
+          except:
+              ...
+    message: "Bare except clause can hide errors. Catch specific exceptions instead."
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-396: Declaration of Catch for Generic Exception"
+
+  # Network forensics specific: Detect unvalidated network data processing
+  - id: unvalidated-network-data
+    patterns:
+      - pattern: struct.unpack($FORMAT, $DATA)
+    message: "Ensure network data is validated before unpacking to prevent buffer overflows"
+    languages: [python]
+    severity: INFO
+    metadata:
+      category: security
+      cwe: "CWE-120: Buffer Copy without Checking Size of Input"
