@@ -1,0 +1,21 @@
+[run]
+source = dshell
+branch = True
+omit =
+    */tests/*
+    */__pycache__/*
+    */data/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+omit =
+    */tests/*
+    */__pycache__/*
+
+[xml]
+output = coverage.xml
