@@ -1,4 +1,8 @@
 # Dshell
+
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=COG-GTM_USArmy-Dshell&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=COG-GTM_USArmy-Dshell)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=COG-GTM_USArmy-Dshell&metric=coverage)](https://sonarcloud.io/summary/new_code?id=COG-GTM_USArmy-Dshell)
+
 An extensible network forensic analysis framework. Enables rapid development of plugins to support the dissection of network packet captures.
 
 Key features:
