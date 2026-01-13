@@ -1,4 +1,4 @@
-FROM python:3-alpine as builder
+FROM python:3.11-alpine as builder
 
 COPY . /src
 
@@ -16,7 +16,7 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 RUN pip install --upgrade pip wheel && pip install .
 
-FROM python:3-alpine
+FROM python:3.11-alpine
 
 ENV VIRTUAL_ENV="/opt/venv"
 

@@ -20,9 +20,9 @@ import heapq
 import inspect
 import logging
 import warnings
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from multiprocessing import Value
-from typing import Iterable, List, Tuple, Union
+from typing import Iterable, List, Tuple, Union, Optional, Dict, Any
 
 # Dshell imports
 from dshell.output.output import Output
@@ -82,6 +82,71 @@ def print_handler_exception(e, plugin, handler):
         "The {!s} for the {!r} plugin raised an exception and failed! ({}: {!s})".format(
             handler, plugin.name, etype, e))
     logger.debug(e, exc_info=True)
+
+
+class LRUConnectionTracker(OrderedDict):
+    """
+    An LRU (Least Recently Used) cache for tracking network connections.
+    
+    This class extends OrderedDict to provide LRU eviction semantics for
+    connection tracking. When a connection is accessed, it is moved to the
+    end of the ordered dictionary, making it the most recently used.
+    When the cache exceeds max_size, the least recently used connections
+    are evicted first.
+    
+    Attributes:
+        max_size: Maximum number of connections to track before eviction
+        metrics: Dictionary tracking cache hits, misses, and evictions
+    """
+    
+    def __init__(self, max_size: int = 1000):
+        super().__init__()
+        self.max_size = max_size
+        self.metrics: Dict[str, int] = {"hits": 0, "misses": 0, "evictions": 0}
+    
+    def __getitem__(self, key: tuple) -> "Connection":
+        """Get a connection and move it to the end (most recently used)."""
+        try:
+            value = super().__getitem__(key)
+            self.move_to_end(key)
+            self.metrics["hits"] += 1
+            return value
+        except KeyError:
+            self.metrics["misses"] += 1
+            raise
+    
+    def __setitem__(self, key: tuple, value: "Connection") -> None:
+        """Set a connection and enforce max_size limit."""
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        self._enforce_max_size()
+    
+    def __contains__(self, key: object) -> bool:
+        """Check if a connection exists without affecting LRU order."""
+        return super().__contains__(key)
+    
+    def get(self, key: tuple, default: Optional["Connection"] = None) -> Optional["Connection"]:
+        """Get a connection without affecting LRU order."""
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            return default
+    
+    def _enforce_max_size(self) -> None:
+        """Evict least recently used connections if over max_size."""
+        while len(self) > self.max_size:
+            oldest_key = next(iter(self))
+            del self[oldest_key]
+            self.metrics["evictions"] += 1
+    
+    def get_metrics(self) -> Dict[str, int]:
+        """Return cache utilization metrics."""
+        return self.metrics.copy()
+    
+    def reset_metrics(self) -> None:
+        """Reset cache utilization metrics."""
+        self.metrics = {"hits": 0, "misses": 0, "evictions": 0}
 
 
 class PacketPlugin(object):
@@ -405,8 +470,7 @@ class PacketPlugin(object):
             return True
         return bool(self.compiled_bpf.filter(packet.rawpkt))
 
-    # NOTE: This was originally called '_packet_handler'
-    def consume_packet(self, packet: "Packet"):
+    def consume_packet(self, packet: "Packet") -> None:
         """
         Filters and defragments packet and then passes the packet along to the packet_handler()
         function to determine whether we should pass the packet(s) along to the next plugin.
@@ -454,7 +518,7 @@ class PacketPlugin(object):
         elif packet_handler_out:
             logger.warning(failed_msg)
 
-    def packet_handler(self, pkt: "Packet"):
+    def packet_handler(self, pkt: "Packet") -> Union["Packet", List["Packet"], None]:
         """
         A placeholder.
 
@@ -489,14 +553,22 @@ class ConnectionPlugin(PacketPlugin):
         super().__init__(**kwargs)
 
         # similar to packet_queue and raw_packet_queue in superclass
-        self._connection_queue = []
+        self._connection_queue: List[Tuple[int, bool, "Connection"]] = []
         # Flag used to determine if we are ready to produce closed connections
         # for the next plugin in the chain.
-        self._production_ready = True
+        self._production_ready: bool = True
 
-        # dictionary to store packets for connections according to addr()
+        # The maximum number of open connections allowed at one time.
+        # If the maximum number of connections is met, the oldest connections
+        # will be force closed via LRU eviction.
+        self.max_open_connections: int = 1000
+
+        # LRU connection tracker to store packets for connections according to addr()
         # NOTE: Only currently unhandled (ie. open) connections are stored here.
-        self._connection_tracker = {}
+        # Uses LRU eviction for better memory management and performance.
+        self._connection_tracker: LRUConnectionTracker = LRUConnectionTracker(
+            max_size=self.max_open_connections
+        )
 
         # define overall counts as multiprocessing Values for --parallel
         self.seen_conn_count = Value('i', 0)
@@ -505,19 +577,15 @@ class ConnectionPlugin(PacketPlugin):
         # maximum number of blobs a connection will store before calling
         # connection_handler
         # it defaults to infinite, but this should be lowered for huge datasets
-        self.maxblobs = float("inf")  # infinite
+        self.maxblobs: float = float("inf")  # infinite
 
         # how long do we wait before deciding a connection is "finished"
         # time is checked by iterating over cached connections and checking if
         # the timestamp of the connection's last packet is older than the
         # timestamp of the current packet, minus this value
-        self.timeout = datetime.timedelta(hours=1)
+        self.timeout: datetime.timedelta = datetime.timedelta(hours=1)
         # The number of packets to process between timeout checks.
-        self.timeout_frequency = 50
-        # The maximum number of open connections allowed at one time.
-        # If the maximum number of connections is met, the oldest connections
-        # will be force closed.
-        self.max_open_connections = 1000
+        self.timeout_frequency: int = 50
 
     def _postmodule(self):
         """
@@ -562,7 +630,7 @@ class ConnectionPlugin(PacketPlugin):
                 # TODO: Perhaps have a "hidden" field on the packet itself?
                 yield from connection.packets
 
-    def consume_packet(self, packet: "Packet"):
+    def consume_packet(self, packet: "Packet") -> None:
         # First run super() to handle the individual packets.
         super().consume_packet(packet)
 
@@ -579,7 +647,7 @@ class ConnectionPlugin(PacketPlugin):
         # on the queue ready to be passed down the chain.
         self._cleanup_connections()
 
-    def _connection_handler(self, packet: "Packet"):
+    def _connection_handler(self, packet: "Packet") -> None:
         """
         Accepts a single Packet object and tracks the connection it belongs to.
 
@@ -638,7 +706,7 @@ class ConnectionPlugin(PacketPlugin):
         if self.handled_packet_count.value % self.timeout_frequency == 0:
             self._timeout_connections(packet.dt)
 
-    def _close_connection(self, conn, full=False):
+    def _close_connection(self, conn: "Connection", full: bool = False) -> None:
         """
         Runs through some standard actions to close a connection
         """
@@ -685,10 +753,13 @@ class ConnectionPlugin(PacketPlugin):
                 print_handler_exception(e, self, 'connection_close_handler')
         return True
 
-    def _timeout_connections(self, timestamp: datetime.datetime):
+    def _timeout_connections(self, timestamp: datetime.datetime) -> None:
         """
         Checks for and force closes connections that have been alive for too long.
-        It also closes the oldest connections if too many connections are open.
+        
+        Note: Capacity-based eviction is now handled automatically by the
+        LRUConnectionTracker class, which evicts least recently used connections
+        when max_size is exceeded.
         """
         # Force close any connections that have timed out.
         # This is based on comparing the time of the current packet, minus
@@ -697,16 +768,10 @@ class ConnectionPlugin(PacketPlugin):
             if conn.endtime < (timestamp - self.timeout):
                 self._close_connection(conn)
 
-        # Force close oldest connections if we have too many.
-        if len(self._connection_tracker) > self.max_open_connections:
-            connections = sorted(self._connection_tracker.values(), key=lambda conn: conn.endtime, reverse=True)
-            for conn in connections[self.max_open_connections:]:
-                self._close_connection(conn)
-
         # We can produce connections again, now that we have handled lingering old connections.
         self._production_ready = True
 
-    def _cleanup_connections(self):
+    def _cleanup_connections(self) -> None:
         """
         decode.py will often reach the end of packet capture before all of the
         connections are closed properly. This function is called at the end
@@ -720,14 +785,14 @@ class ConnectionPlugin(PacketPlugin):
                 self._close_connection(conn)
         self._production_ready = True
 
-    def purge(self):
+    def purge(self) -> None:
         """
         When finished with handling a pcap file, calling this will clear all
         caches in preparation for next file.
         """
         super().purge()
         self._connection_queue = []
-        self._connection_tracker = {}
+        self._connection_tracker = LRUConnectionTracker(max_size=self.max_open_connections)
         self._production_ready = False
 
     # TODO: Have blobs handled with consumer/producer model just like Packets and Connections?

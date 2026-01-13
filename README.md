@@ -20,7 +20,7 @@ Key features:
 
 ## Requirements
 * Linux (developed on Ubuntu 20.04 LTS)
-* Python 3 (developed with Python 3.8.10)
+* Python 3.11+ (developed with Python 3.11)
 * [pypacker](https://gitlab.com/mike01/pypacker)
 * [pcapy-ng](https://github.com/stamparm/pcapy-ng/)
 * [pyOpenSSL](https://github.com/pyca/pyopenssl)

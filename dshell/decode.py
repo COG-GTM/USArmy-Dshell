@@ -32,11 +32,12 @@ import sys
 import tempfile
 import zipfile
 from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import timedelta
 from getpass import getpass
 from glob import glob
 from importlib import import_module
-from typing import Iterable
+from typing import Iterable, List, Optional, Dict, Any
 
 import pcapy
 from pypacker.layer12 import ethernet, ppp, pppoe, ieee80211, linuxcc, radiotap, can
@@ -59,7 +60,7 @@ logger = logging.getLogger(__name__)
 plugin_chain = []
 
 
-def feed_plugin_chain(plugin_index: int, packet: Packet):
+def feed_plugin_chain(plugin_index: int, packet: Packet) -> None:
     """
     Every packet fed into Dshell goes through this function.
     Its goal is to pass each packet down the chain of selected plugins.
@@ -80,7 +81,7 @@ def feed_plugin_chain(plugin_index: int, packet: Packet):
         feed_plugin_chain(plugin_index + 1, _packet)
 
 
-def clean_plugin_chain(plugin_index):
+def clean_plugin_chain(plugin_index: int) -> None:
     """
     This is called at the end of packet capture.
     It will go through the plugins and attempt to cleanup any connections
@@ -319,52 +320,64 @@ def main(plugin_args=None, **kwargs):
     # If we are not multiprocessing, simply pass the files for processing
     if not kwargs.get("multiprocessing", False):
         process_files(inputs, **kwargs)
-    # If we are multiprocessing, things get more complicated.
+    # If we are multiprocessing, use ProcessPoolExecutor for better load balancing
     else:
         # Create an output queue, and wrap the 'write' function of each
         # plugins's output module to send calls to the multiprocessing queue
         output_queue = multiprocessing.Queue()
-        output_wrappers = {}
+        output_wrappers: Dict[int, QueueOutputWrapper] = {}
         for plugin in plugin_chain:
             qo = QueueOutputWrapper(plugin.out, output_queue)
             output_wrappers[qo.id] = qo
             plugin.out.write = qo.write
 
-        # Create processes to handle each separate input file
-        processes = []
-        for i in inputs:
-            processes.append(
-                multiprocessing.Process(target=process_files, args=([i],), kwargs=kwargs)
-            )
-
-        # Spawn processes, and keep track of which ones are running
-        running = []
+        # Use ProcessPoolExecutor for better load balancing across files
+        max_workers = kwargs.get("process_max", multiprocessing.cpu_count())
         max_writes_per_batch = 50
-        while processes or running:
-            if processes and len(running) < kwargs.get("process_max", 4):
-                # Start a process and move it to the 'running' list
-                proc = processes.pop(0)
-                proc.start()
-                logger.debug("Started process {}".format(proc.pid))
-                running.append(proc)
-            for proc in running:
-                if not proc.is_alive():
-                    # Remove finished processes from 'running' list
-                    logger.debug("Ended process {} (exit code: {})".format(proc.pid, proc.exitcode))
-                    running.remove(proc)
-            try:
-                # Process write commands in the output queue.
-                # Since some plugins write copiously and may block other
-                # processes from launching, only write up to a maximum number
-                # before breaking and rechecking the processes.
-                writes = 0
-                while writes < max_writes_per_batch:
-                    wrapper_id, args, kwargs = output_queue.get(True, 1)
-                    owrapper = output_wrappers[wrapper_id]
-                    owrapper.true_write(*args, **kwargs)
-                    writes += 1
-            except queue.Empty:
-                pass
+
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all files to the executor for processing
+            futures = {
+                executor.submit(process_files, [inp], **kwargs): inp
+                for inp in inputs
+            }
+            logger.debug(f"Submitted {len(futures)} files to ProcessPoolExecutor with {max_workers} workers")
+
+            # Process output queue while waiting for futures to complete
+            pending_futures = set(futures.keys())
+            while pending_futures:
+                # Check for completed futures
+                completed = set()
+                for future in pending_futures:
+                    if future.done():
+                        completed.add(future)
+                        inp = futures[future]
+                        try:
+                            future.result()
+                            logger.debug(f"Completed processing: {inp}")
+                        except Exception as e:
+                            logger.error(f"Error processing {inp}: {e}")
+                pending_futures -= completed
+
+                # Process write commands in the output queue
+                try:
+                    writes = 0
+                    while writes < max_writes_per_batch:
+                        wrapper_id, args, queue_kwargs = output_queue.get(True, 0.1)
+                        owrapper = output_wrappers[wrapper_id]
+                        owrapper.true_write(*args, **queue_kwargs)
+                        writes += 1
+                except queue.Empty:
+                    pass
+
+        # Drain any remaining items from the output queue
+        try:
+            while True:
+                wrapper_id, args, queue_kwargs = output_queue.get(False)
+                owrapper = output_wrappers[wrapper_id]
+                owrapper.true_write(*args, **queue_kwargs)
+        except queue.Empty:
+            pass
 
         output_queue.close()
 
