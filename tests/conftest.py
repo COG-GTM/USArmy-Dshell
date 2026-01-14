@@ -144,6 +144,11 @@ class MockPypackerPacket:
             highest = layer
         return highest
 
+    @property
+    def upper_layer(self):
+        """Return the upper layer (IP layer) of the packet."""
+        return self._real_packet.upper_layer
+
 
 class MockEthernetLayer:
     """Mock Ethernet layer."""

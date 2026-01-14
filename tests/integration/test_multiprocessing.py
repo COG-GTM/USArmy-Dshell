@@ -39,6 +39,7 @@ class TestQueueOutputWrapper:
         wrapper = QueueOutputWrapper(output, queue)
         wrapper.write("test data", key="value")
 
+        time.sleep(0.1)
         assert not queue.empty()
         item = queue.get()
         assert item[0] == wrapper.id
@@ -70,6 +71,7 @@ class TestQueueOutputWrapper:
         for i in range(5):
             wrapper.write(f"message {i}")
 
+        time.sleep(0.1)
         count = 0
         while not queue.empty():
             queue.get()
@@ -139,17 +141,27 @@ class TestParallelFileProcessing:
     def test_process_files_handles_single_file(self, temp_pcap_file, patched_geoip):
         """Test process_files handles single file correctly."""
         import dshell.decode as decode
+        from dshell.core import PacketPlugin
 
-        with patch.object(decode, "read_packets") as mock_read:
-            mock_read.return_value = iter([])
+        plugin = PacketPlugin()
+        plugin.out = MockOutput()
+        original_chain = decode.plugin_chain.copy()
+        decode.plugin_chain = [plugin]
 
-            decode.process_files(files=[temp_pcap_file])
+        try:
+            with patch.object(decode, "read_packets") as mock_read:
+                mock_read.return_value = iter([])
 
-            mock_read.assert_called()
+                decode.process_files([temp_pcap_file])
+
+                mock_read.assert_called()
+        finally:
+            decode.plugin_chain = original_chain
 
     def test_process_files_handles_multiple_files(self, tmp_path, patched_geoip):
         """Test process_files handles multiple files."""
         import dshell.decode as decode
+        from dshell.core import PacketPlugin
 
         pcap_header = bytes([
             0xd4, 0xc3, 0xb2, 0xa1,
@@ -166,12 +178,20 @@ class TestParallelFileProcessing:
             f.write_bytes(pcap_header)
             files.append(str(f))
 
-        with patch.object(decode, "read_packets") as mock_read:
-            mock_read.return_value = iter([])
+        plugin = PacketPlugin()
+        plugin.out = MockOutput()
+        original_chain = decode.plugin_chain.copy()
+        decode.plugin_chain = [plugin]
 
-            decode.process_files(files=files)
+        try:
+            with patch.object(decode, "read_packets") as mock_read:
+                mock_read.return_value = iter([])
 
-            assert mock_read.call_count >= 1
+                decode.process_files(files)
+
+                assert mock_read.call_count >= 1
+        finally:
+            decode.plugin_chain = original_chain
 
 
 class TestProcessLifecycle:
@@ -286,6 +306,7 @@ class TestOutputQueueHandling:
         for msg in messages:
             wrapper.write(msg)
 
+        time.sleep(0.1)
         received = []
         while not queue.empty():
             item = queue.get()
