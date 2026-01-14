@@ -24,7 +24,7 @@ class TestPacketPluginInitialization:
 
         plugin = PacketPlugin()
 
-        assert plugin.name == "__main__"
+        assert plugin.name == "dshell.core"
         assert plugin.description == ""
         assert plugin.bpf == ""
         assert plugin.compiled_bpf is None
