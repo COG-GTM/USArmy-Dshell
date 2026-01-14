@@ -26,6 +26,21 @@ setup(
         "elasticsearch",
         "tabulate",
     ],
+    extras_require={
+        "test": [
+            "pytest>=7.0.0",
+            "pytest-cov>=4.0.0",
+            "pytest-mock>=3.10.0",
+            "pytest-benchmark>=4.0.0",
+            "pytest-xdist>=3.0.0",
+        ],
+        "dev": [
+            "black>=23.0.0",
+            "flake8>=6.0.0",
+            "mypy>=1.0.0",
+            "pre-commit>=3.0.0",
+        ],
+    },
     entry_points={
         "console_scripts": [
             "dshell-decode = dshell.decode:main_command_line",

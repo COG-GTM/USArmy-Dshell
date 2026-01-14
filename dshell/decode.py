@@ -164,6 +164,59 @@ def print_plugins(plugins):
 
 
 def main(plugin_args=None, **kwargs):
+    """
+    Main execution function for Dshell packet processing.
+
+    This function orchestrates the packet processing pipeline, setting up plugins,
+    configuring output modules, and processing input files or live capture.
+
+    Args:
+        plugin_args (dict, optional): Dictionary mapping plugin instances to their
+            specific argument dictionaries. Each plugin can have custom arguments
+            defined in its optiondict. Defaults to None (empty dict).
+
+        **kwargs: Keyword arguments for controlling execution behavior:
+            files (list): List of PCAP file paths to process.
+            interface (str): Network interface name for live capture.
+            defrag (bool): Enable IP defragmentation. Defaults to False.
+            verbose (bool): Enable verbose (INFO level) logging. Defaults to False.
+            debug (bool): Enable debug logging. Defaults to False.
+            quiet (bool): Disable all logging except CRITICAL. Defaults to False.
+            allcc (bool): Show all 3 GeoIP2 country code types. Defaults to False.
+            omodule (str): Output module name (e.g., 'jsonout', 'csvout').
+            oargs (list): List of output module arguments as 'key=value' strings.
+            outfile (str): Output file path instead of stdout.
+            nobuffer (bool): Disable output buffering. Defaults to False.
+            extra (bool): Append extra data to plugin output. Defaults to False.
+            cbf (bool): Enable color blind friendly mode. Defaults to False.
+            bpf (str): Override all BPF filters with this filter.
+            ebpf (str): Extend existing BPF filters with additional filtering.
+            novlan (bool): Ignore packets with VLAN headers. Defaults to False.
+            multiprocessing (bool): Process files in parallel. Defaults to False.
+            process_max (int): Maximum parallel processes. Defaults to 4.
+            conntimeout (int): Connection timeout in seconds. Defaults to 3600.
+            connmax (int): Maximum open connections. Defaults to 1000.
+            count (int): Number of packets to process (0 = unlimited).
+            recursive (bool): Recursively process directories. Defaults to False.
+            unzipdir (str): Directory for decompressing files.
+
+    Returns:
+        None
+
+    Raises:
+        SystemExit: If no plugin is selected or other fatal errors occur.
+
+    Example:
+        >>> import dshell.decode as decode
+        >>> from dshell.plugins.http import web
+        >>> plugin = web.DshellPlugin()
+        >>> decode.plugin_chain = [plugin]
+        >>> decode.main(files=['capture.pcap'])
+
+    Note:
+        The plugin_chain global variable must be populated with plugin instances
+        before calling this function. Use main_command_line() for CLI usage.
+    """
     global plugin_chain
 
     if not plugin_args:
@@ -499,11 +552,48 @@ def read_packets(input: str, interface=False, bpf=None, count=None) -> Iterable[
             break
 
 
-# TODO: The use of kwargs makes it difficult to understand what arguments the function accept
-#   and difficult to follow the code flow.
 def process_files(inputs, **kwargs):
-    # Iterate over each of the input files
-    # For live capture, the "input" would just be the name of the interface
+    """
+    Process PCAP files or live network capture through the plugin chain.
+
+    This function iterates over input files (or live capture interfaces), reads
+    packets, and feeds them through the configured plugin chain for analysis.
+    It handles compressed files (.gz, .bz2, .zip) by automatically decompressing
+    them before processing.
+
+    Args:
+        inputs (list): List of input sources to process. Can be:
+            - File paths to PCAP/PCAPNG files
+            - Paths to compressed PCAP files (.gz, .bz2, .zip)
+            - Network interface names (when interface=True in kwargs)
+
+        **kwargs: Keyword arguments for controlling file processing:
+            interface (bool): If True, treat inputs as network interface names
+                for live capture instead of file paths. Defaults to False.
+            count (int): Maximum number of packets to process per file.
+                None or 0 means unlimited. Defaults to None.
+            unzipdir (str): Directory for temporary decompressed files.
+                Defaults to system temp directory.
+
+    Returns:
+        None
+
+    Side Effects:
+        - Calls _prefile() on each plugin before processing each file
+        - Feeds packets through feed_plugin_chain()
+        - Calls clean_plugin_chain() after each file
+        - Calls purge() and _postfile() on each plugin after each file
+        - Modifies the inputs list in place (pops items as processed)
+
+    Example:
+        >>> import dshell.decode as decode
+        >>> decode.plugin_chain = [my_plugin]
+        >>> decode.process_files(['capture1.pcap', 'capture2.pcap.gz'])
+
+    Note:
+        The global plugin_chain must be populated before calling this function.
+        BPF filtering is applied using the first plugin's BPF filter.
+    """
     global plugin_chain
     interface = kwargs.get("interface", False)
     count = kwargs.get("count", None)
