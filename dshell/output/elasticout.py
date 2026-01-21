@@ -3,10 +3,15 @@ This output module converts plugin output into JSON and indexes it into
 an Elasticsearch datastore
 
 NOTE: This module requires the third-party 'elasticsearch' Python module
+
+SECURITY NOTE: Ensure your Elasticsearch server is version 1.4.3 or later
+to protect against CVE-2015-1427 and CVE-2014-3120 (Remote Code Execution).
+See: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
 """
 
 import ipaddress
 import json
+import warnings
 
 from elasticsearch import Elasticsearch
 
@@ -31,6 +36,14 @@ class ElasticOutput(dshell.output.jsonout.JSONOutput):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs.copy())
+
+        # Security warning for Elasticsearch server versions (CISA KEV CVEs)
+        warnings.warn(
+            "SECURITY: Ensure your Elasticsearch server is version 1.4.3 or later "
+            "to protect against CVE-2015-1427 and CVE-2014-3120 (Remote Code Execution). "
+            "See: https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+            UserWarning
+        )
 
         self.options = {}
         self.options['host'] = kwargs.get('host', 'localhost')

@@ -19,12 +19,12 @@ setup(
         "Topic :: Security",
     ],
     install_requires=[
-        "geoip2",
-        "pcapy-ng",
-        "pypacker",
-        "pyopenssl",
-        "elasticsearch",
-        "tabulate",
+        "geoip2>=4.0.0",
+        "pcapy-ng>=1.0.0",
+        "pypacker>=5.0",
+        "pyopenssl>=21.0.0",  # Minimum version to ensure modern OpenSSL (CVE-2014-0160 mitigation)
+        "elasticsearch>=7.0.0",  # Modern client with security features
+        "tabulate>=0.8.0",
     ],
     entry_points={
         "console_scripts": [
