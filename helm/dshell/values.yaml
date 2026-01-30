@@ -1,0 +1,25 @@
+image:
+  repository: dshell
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 500m
+  limits:
+    memory: 2Gi
+    cpu: 2000m
+
+persistence:
+  pcap:
+    enabled: true
+    size: 50Gi
+    storageClass: standard
+  geoip:
+    enabled: true
+    existingConfigMap: dshell-geoip-config
+
+# For live capture scenarios
+networkMode: default  # Set to 'host' for live capture
+privileged: false     # Set to true for live capture

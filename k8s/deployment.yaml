@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dshell
+  labels:
+    app: dshell
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dshell
+  template:
+    metadata:
+      labels:
+        app: dshell
+    spec:
+      containers:
+      - name: dshell
+        image: dshell:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash"]
+        args: ["-c", "while true; do sleep 30; done"]
+        volumeMounts:
+        - name: pcap-data
+          mountPath: /data
+        - name: geoip-data
+          mountPath: /opt/venv/lib/python3.11/site-packages/dshell/data/GeoIP
+          readOnly: true
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+      volumes:
+      - name: pcap-data
+        persistentVolumeClaim:
+          claimName: dshell-pcap-pvc
+      - name: geoip-data
+        configMap:
+          name: dshell-geoip-config
