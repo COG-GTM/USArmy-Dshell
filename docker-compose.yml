@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  dshell:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dshell:latest
+    container_name: dshell-analyzer
+    volumes:
+      # Mount PCAP files directory
+      - ./pcaps:/data
+      # Mount GeoIP databases (download separately)
+      - ./geoip:/opt/venv/lib/python3.11/site-packages/dshell/data/GeoIP:ro
+      # Optional: Mount custom plugins
+      - ./custom-plugins:/opt/venv/lib/python3.11/site-packages/dshell/plugins/custom:ro
+    # Override entrypoint for interactive use
+    entrypoint: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+    # For live capture (uncomment if needed)
+    # network_mode: host
+    # privileged: true
+    # cap_add:
+    #   - NET_ADMIN
+    #   - NET_RAW
