@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dshell
+description: Network forensic analysis framework
+type: application
+version: 3.2.3
+appVersion: "3.2.3"
