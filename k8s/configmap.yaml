@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dshell-geoip-config
+binaryData:
+  GeoLite2-City.mmdb: <base64-encoded-data>
+  GeoLite2-Country.mmdb: <base64-encoded-data>
+  GeoLite2-ASN.mmdb: <base64-encoded-data>
