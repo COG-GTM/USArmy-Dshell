@@ -22,7 +22,7 @@ import logging
 import warnings
 from collections import defaultdict
 from multiprocessing import Value
-from typing import Iterable, List, Tuple, Union
+from typing import Iterable, List, Optional, Tuple, Union
 
 # Dshell imports
 from dshell.output.output import Output
@@ -65,7 +65,9 @@ except FileNotFoundError:
     geoip = DshellFailedGeoIP()
 
 
-def print_handler_exception(e, plugin, handler):
+def print_handler_exception(
+    e: Exception, plugin: "PacketPlugin", handler: str
+) -> None:
     """
     A convenience function to display an error message when a handler raises
     an exception.
@@ -74,7 +76,7 @@ def print_handler_exception(e, plugin, handler):
 
     Args:
         e:          the exception object
-        plugin:    the plugin object
+        plugin:     the plugin object
         handler:    name of the handler function
     """
     etype = e.__class__.__name__
@@ -406,7 +408,7 @@ class PacketPlugin(object):
         return bool(self.compiled_bpf.filter(packet.rawpkt))
 
     # NOTE: This was originally called '_packet_handler'
-    def consume_packet(self, packet: "Packet"):
+    def consume_packet(self, packet: "Packet") -> None:
         """
         Filters and defragments packet and then passes the packet along to the packet_handler()
         function to determine whether we should pass the packet(s) along to the next plugin.
@@ -432,29 +434,37 @@ class PacketPlugin(object):
         # decode.py will continue down the chain if it returns anything
         try:
             packet_handler_out = self.packet_handler(packet)
+        except (SequenceNumberError, DataError) as e:
+            print_handler_exception(e, self, 'packet_handler')
+            return
         except Exception as e:
             print_handler_exception(e, self, 'packet_handler')
             return
+
+        if packet_handler_out is None:
+            return
+
         failed_msg = (
             f"The output from {self.name} packet_handler must be of type dshell.Packet or a list of "
             f"such objects! Handling connections or chaining from this plugin may not be possible."
         )
-        if isinstance(packet_handler_out, (list, tuple)):
+        if isinstance(packet_handler_out, Packet):
+            self._packet_queue.append(packet_handler_out)
+            with self.handled_packet_count.get_lock():
+                self.handled_packet_count.value += 1
+        elif isinstance(packet_handler_out, (list, tuple)):
             for phout in packet_handler_out:
                 if isinstance(phout, Packet):
                     self._packet_queue.append(phout)
                     with self.handled_packet_count.get_lock():
                         self.handled_packet_count.value += 1
-                elif phout:
+                else:
                     logger.warning(failed_msg)
-        elif isinstance(packet_handler_out, Packet):
-            self._packet_queue.append(packet_handler_out)
-            with self.handled_packet_count.get_lock():
-                self.handled_packet_count.value += 1
-        elif packet_handler_out:
+                    break
+        else:
             logger.warning(failed_msg)
 
-    def packet_handler(self, pkt: "Packet"):
+    def packet_handler(self, pkt: "Packet") -> Optional[Union["Packet", List["Packet"]]]:
         """
         A placeholder.
 
@@ -562,7 +572,7 @@ class ConnectionPlugin(PacketPlugin):
                 # TODO: Perhaps have a "hidden" field on the packet itself?
                 yield from connection.packets
 
-    def consume_packet(self, packet: "Packet"):
+    def consume_packet(self, packet: "Packet") -> None:
         # First run super() to handle the individual packets.
         super().consume_packet(packet)
 
@@ -579,7 +589,7 @@ class ConnectionPlugin(PacketPlugin):
         # on the queue ready to be passed down the chain.
         self._cleanup_connections()
 
-    def _connection_handler(self, packet: "Packet"):
+    def _connection_handler(self, packet: "Packet") -> None:
         """
         Accepts a single Packet object and tracks the connection it belongs to.
 
@@ -604,8 +614,13 @@ class ConnectionPlugin(PacketPlugin):
             self._connection_tracker[connkey] = conn
             try:
                 self.connection_init_handler(conn)
+            except (SequenceNumberError, DataError) as e:
+                print_handler_exception(e, self, 'connection_init_handler')
+                del self._connection_tracker[connkey]
+                return
             except Exception as e:
                 print_handler_exception(e, self, 'connection_init_handler')
+                del self._connection_tracker[connkey]
                 return
             with self.seen_conn_count.get_lock():
                 self.seen_conn_count.value += 1
@@ -652,7 +667,7 @@ class ConnectionPlugin(PacketPlugin):
         except KeyError:
             pass
 
-    def _handle_connection(self, conn: "Connection", full=False) -> bool:
+    def _handle_connection(self, conn: "Connection", full: bool = False) -> bool:
         """
         Handles produced connections.
 
@@ -660,19 +675,21 @@ class ConnectionPlugin(PacketPlugin):
         """
         try:
             connection_handler_out = self.connection_handler(conn)
+        except (SequenceNumberError, DataError) as e:
+            print_handler_exception(e, self, 'connection_handler')
+            return False
         except Exception as e:
             print_handler_exception(e, self, 'connection_handler')
             return False
         conn.handled = True
 
-        # TODO: Perhaps connection_handler() just returns a True or False indicating success?
-        if connection_handler_out and not isinstance(connection_handler_out, Connection):
+        if connection_handler_out is None:
+            return False
+
+        if not isinstance(connection_handler_out, Connection):
             logger.warning(
                 "The output from {} connection_handler must be of type dshell.Connection! Chaining plugins from here may not be possible.".format(
                     self.name))
-            connection_handler_out = None
-
-        if not connection_handler_out:
             return False
 
         with self.handled_conn_count.get_lock():
@@ -681,6 +698,8 @@ class ConnectionPlugin(PacketPlugin):
         if full:
             try:
                 self.connection_close_handler(conn)
+            except (SequenceNumberError, DataError) as e:
+                print_handler_exception(e, self, 'connection_close_handler')
             except Exception as e:
                 print_handler_exception(e, self, 'connection_close_handler')
         return True
@@ -731,7 +750,7 @@ class ConnectionPlugin(PacketPlugin):
         self._production_ready = False
 
     # TODO: Have blobs handled with consumer/producer model just like Packets and Connections?
-    def _blob_handler(self, conn: "Connection", blob: "Blob"):
+    def _blob_handler(self, conn: "Connection", blob: "Blob") -> None:
         """
         Accepts a Connection and a Blob.
 
@@ -740,20 +759,36 @@ class ConnectionPlugin(PacketPlugin):
         """
         try:
             blob_handler_out = self.blob_handler(conn, blob)
+        except (SequenceNumberError, DataError) as e:
+            print_handler_exception(e, self, 'blob_handler')
+            blob.hidden = True
+            return
         except Exception as e:
             print_handler_exception(e, self, 'blob_handler')
-            blob_handler_out = None
-        if blob_handler_out:
-            connection, blob = blob_handler_out
-            if not isinstance(connection, Connection) or not isinstance(blob, Blob):
-                logger.warning(
-                    "The output from {} blob_handler must be of type (dshell.Connection, dshell.Blob)! Chaining plugins from here may not be possible.".format(
-                        self.name))
-                blob_handler_out = None
-        if not blob_handler_out:
+            blob.hidden = True
+            return
+
+        if blob_handler_out is None:
+            blob.hidden = True
+            return
+
+        if not isinstance(blob_handler_out, tuple) or len(blob_handler_out) != 2:
+            logger.warning(
+                "The output from {} blob_handler must be of type (dshell.Connection, dshell.Blob)! Chaining plugins from here may not be possible.".format(
+                    self.name))
+            blob.hidden = True
+            return
+
+        out_conn, out_blob = blob_handler_out
+        if not isinstance(out_conn, Connection) or not isinstance(out_blob, Blob):
+            logger.warning(
+                "The output from {} blob_handler must be of type (dshell.Connection, dshell.Blob)! Chaining plugins from here may not be possible.".format(
+                    self.name))
             blob.hidden = True
 
-    def blob_handler(self, conn: "Connection", blob: "Blob"):
+    def blob_handler(
+        self, conn: "Connection", blob: "Blob"
+    ) -> Optional[Tuple["Connection", "Blob"]]:
         """
         A placeholder.
 
@@ -769,7 +804,7 @@ class ConnectionPlugin(PacketPlugin):
         """
         return conn, blob
 
-    def connection_init_handler(self, conn: "Connection"):
+    def connection_init_handler(self, conn: "Connection") -> None:
         """
         A placeholder.
 
@@ -781,7 +816,7 @@ class ConnectionPlugin(PacketPlugin):
         """
         return
 
-    def connection_handler(self, conn: "Connection"):
+    def connection_handler(self, conn: "Connection") -> Optional["Connection"]:
         """
         A placeholder.
 
@@ -795,7 +830,7 @@ class ConnectionPlugin(PacketPlugin):
         """
         return conn
 
-    def connection_close_handler(self, conn: "Connection"):
+    def connection_close_handler(self, conn: "Connection") -> None:
         """
         A placeholder.
 
