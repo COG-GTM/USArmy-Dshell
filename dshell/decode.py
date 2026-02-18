@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 plugin_chain = []
 
 
-def feed_plugin_chain(plugin_index: int, packet: Packet):
+def feed_plugin_chain(plugin_index: int, packet: Packet) -> None:
     """
     Every packet fed into Dshell goes through this function.
     Its goal is to pass each packet down the chain of selected plugins.
@@ -80,7 +80,7 @@ def feed_plugin_chain(plugin_index: int, packet: Packet):
         feed_plugin_chain(plugin_index + 1, _packet)
 
 
-def clean_plugin_chain(plugin_index):
+def clean_plugin_chain(plugin_index: int) -> None:
     """
     This is called at the end of packet capture.
     It will go through the plugins and attempt to cleanup any connections
