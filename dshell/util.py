@@ -2,8 +2,35 @@
 A collection of useful utilities used in several plugins and libraries.
 """
 
+import json
+import logging
 import os
+import re
 import string
+from datetime import datetime
+
+
+def validate_input(value: str, pattern: str, max_length: int = 255) -> bool:
+    if not value or len(value) > max_length:
+        return False
+    return bool(re.match(pattern, value))
+
+
+def sanitize_input(value: str) -> str:
+    return re.sub(r'[<>"\';&|`$()]', '', value.strip())
+
+
+_audit_logger = logging.getLogger("audit")
+
+
+def log_security_event(event_type: str, source: str = "", details: dict = None):
+    entry = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "event": event_type,
+        "source": source,
+        "details": details or {}
+    }
+    _audit_logger.info(json.dumps(entry))
 
 
 def xor(xinput, key):
