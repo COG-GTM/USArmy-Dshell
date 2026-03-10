@@ -203,38 +203,38 @@ def _configure_output_module(**kwargs):
             plugin.out.set_oargs(**oargs)
 
 
-def _configure_plugin_settings(plugin, **kwargs):
+def _configure_plugin_settings(plugin_obj, kwargs):
     if kwargs.get("outfile", None):
-        plugin.out.reset_fh(filename=kwargs["outfile"])
+        plugin_obj.out.reset_fh(filename=kwargs["outfile"])
 
     if kwargs.get("nobuffer", False):
-        plugin.out.nobuffer = True
+        plugin_obj.out.nobuffer = True
 
     if kwargs.get("cbf", False):
-        plugin.out.cbf = True
+        plugin_obj.out.cbf = True
 
     if kwargs.get("extra", False):
-        plugin.out.extra = True
-        plugin.out.set_format(plugin.out.format)
+        plugin_obj.out.extra = True
+        plugin_obj.out.set_format(plugin_obj.out.format)
 
-    if hasattr(plugin, "timeout"):
+    if hasattr(plugin_obj, "timeout"):
         if t := kwargs.get("conntimeout"):
             td = timedelta(seconds=int(t))
-            plugin.timeout = td
+            plugin_obj.timeout = td
         if t := kwargs.get("connmax"):
-            plugin.max_open_connections = int(t)
+            plugin_obj.max_open_connections = int(t)
 
     if kwargs.get("bpf", None):
-        plugin.bpf = kwargs.get("bpf", "")
+        plugin_obj.bpf = kwargs.get("bpf", "")
         return True
-    if plugin.bpf:
+    if plugin_obj.bpf:
         if kwargs.get("ebpf", None):
-            plugin.bpf = "({}) and ({})".format(plugin.bpf, kwargs.get("ebpf", ""))
+            plugin_obj.bpf = "({}) and ({})".format(plugin_obj.bpf, kwargs.get("ebpf", ""))
     else:
         if kwargs.get("ebpf", None):
-            plugin.bpf = kwargs.get("ebpf", "")
+            plugin_obj.bpf = kwargs.get("ebpf", "")
     if kwargs.get("novlan", False):
-        plugin.vlan_bpf = False
+        plugin_obj.vlan_bpf = False
     return False
 
 
@@ -328,7 +328,7 @@ def main(plugin_args=None, **kwargs):
     _configure_output_module(**kwargs)
 
     for plugin in plugin_chain:
-        should_skip = _configure_plugin_settings(plugin, **kwargs)
+        should_skip = _configure_plugin_settings(plugin, kwargs)
         if should_skip:
             continue
 
