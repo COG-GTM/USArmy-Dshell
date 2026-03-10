@@ -163,26 +163,7 @@ def print_plugins(plugins):
     print(tabulate(rows, headers=headers))
 
 
-def main(plugin_args=None, **kwargs):
-    global plugin_chain
-
-    if not plugin_args:
-        plugin_args = {}
-
-    # dictionary of all available plugins: {name: module path}
-    plugin_map = get_plugins()
-
-    # Attempt to catch segfaults caused when certain linktypes (e.g. 204) are
-    # given to pcapy
-    faulthandler.enable()
-
-    if not plugin_chain:
-        logger.error("No plugin selected")
-        sys.exit(1)
-
-    plugin_chain[0].defrag_ip = kwargs.get("defrag", False)
-
-    # Setup logging
+def _setup_logging(**kwargs):
     log_format = "%(levelname)s (%(name)s) - %(message)s"
     if kwargs.get("verbose", False):
         log_level = logging.INFO
@@ -193,34 +174,22 @@ def main(plugin_args=None, **kwargs):
     else:
         log_level = logging.WARNING
     logging.basicConfig(format=log_format, level=log_level)
-
-    # since pypacker handles its own exceptions (loudly), this attempts to keep
-    # it quiet
     logging.getLogger("pypacker").setLevel(logging.CRITICAL)
 
-    if kwargs.get("allcc", False):
-        # Activate all country code (allcc) mode to display all 3 GeoIP2 country
-        # codes
-        dshell.core.geoip.acc = True
 
-    dshell.core.geoip.check_file_dates()
-
-    # If alternate output module is selected, tell each plugin to use that
-    # instead
+def _configure_output_module(**kwargs):
+    global plugin_chain
     if kwargs.get("omodule", None):
         try:
-            # TODO: Create a factory classmethod in the base Output class (e.g. "from_name()") instead.
             omodule = import_module("dshell.output."+kwargs["omodule"])
             omodule = omodule.obj
             for plugin in plugin_chain:
-                # TODO: Should we have a single instance of the Output module used by all plugins?
                 oomodule = omodule()
                 plugin.out = oomodule
         except ImportError as e:
             logger.error("Could not import module named '{}'. Use --list-output flag to see available modules".format(kwargs["omodule"]))
             sys.exit(1)
 
-    # Check if any user-defined output arguments are provided
     if kwargs.get("oargs", None):
         oargs = {}
         for oarg in kwargs["oargs"]:
@@ -233,76 +202,138 @@ def main(plugin_args=None, **kwargs):
         for plugin in plugin_chain:
             plugin.out.set_oargs(**oargs)
 
-    for plugin in plugin_chain:
-        # If writing to a file, set for each output module here
-        if kwargs.get("outfile", None):
-            plugin.out.reset_fh(filename=kwargs["outfile"])
 
-        # Set nobuffer mode if that's what the user wants
-        if kwargs.get("nobuffer", False):
-            plugin.out.nobuffer = True
-            
-        # Set color blind friendly mode
-        if kwargs.get("cbf", False):
-            plugin.out.cbf = True
+def _configure_plugin_settings(plugin, **kwargs):
+    if kwargs.get("outfile", None):
+        plugin.out.reset_fh(filename=kwargs["outfile"])
 
-        # Set the extra flag for all output modules
-        if kwargs.get("extra", False):
-            plugin.out.extra = True
-            plugin.out.set_format(plugin.out.format)
+    if kwargs.get("nobuffer", False):
+        plugin.out.nobuffer = True
 
-        # Set some attributes for ConnectionPlugins
-        if hasattr(plugin, "timeout"):
-            # Set wait time since last packet arrived in a connection before
-            # considering connection closed
-            if t := kwargs.get("conntimeout"):
-                td = timedelta(seconds=int(t))
-                plugin.timeout = td
-            # Set max number of allowed open connections
-            if t := kwargs.get("connmax"):
-                plugin.max_open_connections = int(t)
+    if kwargs.get("cbf", False):
+        plugin.out.cbf = True
 
-        # Set the BPF filters
-        # Each plugin has its own default BPF that will be extended or replaced
-        # based on --no-vlan, --ebpf, or --bpf arguments.
-        if kwargs.get("bpf", None):
-            plugin.bpf = kwargs.get("bpf", "")
-            continue
-        if plugin.bpf:
-            if kwargs.get("ebpf", None):
-                plugin.bpf = "({}) and ({})".format(plugin.bpf, kwargs.get("ebpf", ""))
-        else:
-            if kwargs.get("ebpf", None):
-                plugin.bpf = kwargs.get("ebpf", "")
-        if kwargs.get("novlan", False):
-            plugin.vlan_bpf = False
+    if kwargs.get("extra", False):
+        plugin.out.extra = True
+        plugin.out.set_format(plugin.out.format)
 
-    # Decide on the inputs to use for pcap
-    # If --interface is set, ignore all files and listen live on the wire
-    # Otherwise, use all of the files and globs to open offline pcap.
-    # Recurse through any directories if the command-line flag is set.
-    if kwargs.get("interface", None):
-        inputs = [kwargs.get("interface")]
+    if hasattr(plugin, "timeout"):
+        if t := kwargs.get("conntimeout"):
+            td = timedelta(seconds=int(t))
+            plugin.timeout = td
+        if t := kwargs.get("connmax"):
+            plugin.max_open_connections = int(t)
+
+    if kwargs.get("bpf", None):
+        plugin.bpf = kwargs.get("bpf", "")
+        return True
+    if plugin.bpf:
+        if kwargs.get("ebpf", None):
+            plugin.bpf = "({}) and ({})".format(plugin.bpf, kwargs.get("ebpf", ""))
     else:
-        inputs = []
-        inglobs = kwargs.get("files", [])
-        infiles = []
-        for inglob in inglobs:
-            outglob = glob(inglob)
-            if not outglob:
-                logger.warning("Could not find file(s) matching {!r}".format(inglob))
-                continue
-            infiles.extend(outglob)
-        while len(infiles) > 0:
-            infile = infiles.pop(0)
-            if kwargs.get("recursive", False) and os.path.isdir(infile):
-                morefiles = os.listdir(infile)
-                for morefile in morefiles:
-                    infiles.append(os.path.join(infile, morefile))
-            elif os.path.isfile(infile):
-                inputs.append(infile)
+        if kwargs.get("ebpf", None):
+            plugin.bpf = kwargs.get("ebpf", "")
+    if kwargs.get("novlan", False):
+        plugin.vlan_bpf = False
+    return False
 
-    # Process plugin-specific options
+
+def _resolve_inputs(**kwargs):
+    if kwargs.get("interface", None):
+        return [kwargs.get("interface")]
+
+    inputs = []
+    inglobs = kwargs.get("files", [])
+    infiles = []
+    for inglob in inglobs:
+        outglob = glob(inglob)
+        if not outglob:
+            logger.warning("Could not find file(s) matching {!r}".format(inglob))
+            continue
+        infiles.extend(outglob)
+    while len(infiles) > 0:
+        infile = infiles.pop(0)
+        if kwargs.get("recursive", False) and os.path.isdir(infile):
+            morefiles = os.listdir(infile)
+            for morefile in morefiles:
+                infiles.append(os.path.join(infile, morefile))
+        elif os.path.isfile(infile):
+            inputs.append(infile)
+    return inputs
+
+
+def _run_multiprocessing(inputs, **kwargs):
+    global plugin_chain
+    output_queue = multiprocessing.Queue()
+    output_wrappers = {}
+    for plugin in plugin_chain:
+        qo = QueueOutputWrapper(plugin.out, output_queue)
+        output_wrappers[qo.id] = qo
+        plugin.out.write = qo.write
+
+    processes = []
+    for i in inputs:
+        processes.append(
+            multiprocessing.Process(target=process_files, args=([i],), kwargs=kwargs)
+        )
+
+    running = []
+    max_writes_per_batch = 50
+    while processes or running:
+        if processes and len(running) < kwargs.get("process_max", 4):
+            proc = processes.pop(0)
+            proc.start()
+            logger.debug("Started process {}".format(proc.pid))
+            running.append(proc)
+        for proc in running:
+            if not proc.is_alive():
+                logger.debug("Ended process {} (exit code: {})".format(proc.pid, proc.exitcode))
+                running.remove(proc)
+        try:
+            writes = 0
+            while writes < max_writes_per_batch:
+                wrapper_id, args, kwargs = output_queue.get(True, 1)
+                owrapper = output_wrappers[wrapper_id]
+                owrapper.true_write(*args, **kwargs)
+                writes += 1
+        except queue.Empty:
+            pass
+
+    output_queue.close()
+
+
+def main(plugin_args=None, **kwargs):
+    global plugin_chain
+
+    if not plugin_args:
+        plugin_args = {}
+
+    plugin_map = get_plugins()
+
+    faulthandler.enable()
+
+    if not plugin_chain:
+        logger.error("No plugin selected")
+        sys.exit(1)
+
+    plugin_chain[0].defrag_ip = kwargs.get("defrag", False)
+
+    _setup_logging(**kwargs)
+
+    if kwargs.get("allcc", False):
+        dshell.core.geoip.acc = True
+
+    dshell.core.geoip.check_file_dates()
+
+    _configure_output_module(**kwargs)
+
+    for plugin in plugin_chain:
+        should_skip = _configure_plugin_settings(plugin, **kwargs)
+        if should_skip:
+            continue
+
+    inputs = _resolve_inputs(**kwargs)
+
     for plugin in plugin_chain:
         for option, args in plugin.optiondict.items():
             if option in plugin_args.get(plugin, {}):
@@ -311,62 +342,13 @@ def main(plugin_args=None, **kwargs):
                 setattr(plugin, option, args.get("default", None))
         plugin.handle_plugin_options()
 
-
-    #### Dshell is ready to read pcap! ####
     for plugin in plugin_chain:
         plugin._premodule()
 
-    # If we are not multiprocessing, simply pass the files for processing
     if not kwargs.get("multiprocessing", False):
         process_files(inputs, **kwargs)
-    # If we are multiprocessing, things get more complicated.
     else:
-        # Create an output queue, and wrap the 'write' function of each
-        # plugins's output module to send calls to the multiprocessing queue
-        output_queue = multiprocessing.Queue()
-        output_wrappers = {}
-        for plugin in plugin_chain:
-            qo = QueueOutputWrapper(plugin.out, output_queue)
-            output_wrappers[qo.id] = qo
-            plugin.out.write = qo.write
-
-        # Create processes to handle each separate input file
-        processes = []
-        for i in inputs:
-            processes.append(
-                multiprocessing.Process(target=process_files, args=([i],), kwargs=kwargs)
-            )
-
-        # Spawn processes, and keep track of which ones are running
-        running = []
-        max_writes_per_batch = 50
-        while processes or running:
-            if processes and len(running) < kwargs.get("process_max", 4):
-                # Start a process and move it to the 'running' list
-                proc = processes.pop(0)
-                proc.start()
-                logger.debug("Started process {}".format(proc.pid))
-                running.append(proc)
-            for proc in running:
-                if not proc.is_alive():
-                    # Remove finished processes from 'running' list
-                    logger.debug("Ended process {} (exit code: {})".format(proc.pid, proc.exitcode))
-                    running.remove(proc)
-            try:
-                # Process write commands in the output queue.
-                # Since some plugins write copiously and may block other
-                # processes from launching, only write up to a maximum number
-                # before breaking and rechecking the processes.
-                writes = 0
-                while writes < max_writes_per_batch:
-                    wrapper_id, args, kwargs = output_queue.get(True, 1)
-                    owrapper = output_wrappers[wrapper_id]
-                    owrapper.true_write(*args, **kwargs)
-                    writes += 1
-            except queue.Empty:
-                pass
-
-        output_queue.close()
+        _run_multiprocessing(inputs, **kwargs)
 
     for plugin in plugin_chain:
         plugin._postmodule()

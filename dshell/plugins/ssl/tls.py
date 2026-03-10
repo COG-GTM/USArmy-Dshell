@@ -934,7 +934,7 @@ For JA3 support (ClientHello hash), install module pyja3
                 except UnsupportedOption:
                     self.log('Unsupported type: %s\n' % (sys.exc_info()[1]))
                     offset += len(data)
-                except:
+                except Exception:
                     offset += len(data)
                     self.log('Unknown error in connectionHandler: %s' %
                              sys.exc_info()[1])
@@ -968,14 +968,14 @@ For JA3 support (ClientHello hash), install module pyja3
         try:
             info['cipher_text'] = ciphersuit_text[struct.unpack('!H', server_cipher)[
                 0]]
-        except:
+        except Exception:
             info['cipher_text'] = 'UNKNOWN'
 
         #
         # Determine output message
         #
         if len(client_names) + len(server_names) == 0:
-            return conn
+            return None
         client_name = ','.join(info['client_names'])
         server_name = ','.join(info['server_names'])
         if len(client_name) and client_name != server_name:

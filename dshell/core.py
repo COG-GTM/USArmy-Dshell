@@ -621,7 +621,7 @@ class ConnectionPlugin(PacketPlugin):
         # if pkt.data:
         #     conn.handled = False
 
-        if conn.closed:
+        if conn.is_closed:
             # Both sides have closed the connection, process blobs (messages) and
             # close connection.
             for blob in conn.blobs:
@@ -1217,11 +1217,11 @@ class Connection(object):
         return tdelta.total_seconds()
 
     @property
-    def closed(self):
+    def is_closed(self):
         return self.client_state == self.CLOSED and self.server_state == self.CLOSED
 
     @property
-    def established(self):
+    def is_established(self):
         return self.client_state == self.ESTABLISHED and self.server_state == self.ESTABLISHED
 
     @property

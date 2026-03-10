@@ -54,7 +54,7 @@ class DshellPlugin(dshell.core.PacketPlugin):
     WRQ = 2  # write request
     DATA = 3
     ACK = 4
-    ERROR = 5
+    OPCODE_ERROR = 5
     OACK = 6  # option acknowledgment
 
     def __init__(self, **kwargs):
@@ -213,7 +213,7 @@ class DshellPlugin(dshell.core.PacketPlugin):
                 self.__closeStream(
                     (serverIP, serverPort, clientIP, clientPort))
 
-        elif flag == self.ERROR:
+        elif flag == self.OPCODE_ERROR:
             # this package is sending an error message
             # TODO handle more of these properly
             errCode = struct.unpack("!H", data[:2])[0]
