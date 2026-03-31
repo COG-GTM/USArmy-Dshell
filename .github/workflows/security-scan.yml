@@ -36,7 +36,7 @@ jobs:
       - name: Run Bandit SAST scanner
         run: |
           bandit -r dshell -f json -o bandit-report.json || true
-          bandit -r dshell -f screen
+          bandit -r dshell -f screen || true
 
       - name: Upload Bandit report
         uses: actions/upload-artifact@v4

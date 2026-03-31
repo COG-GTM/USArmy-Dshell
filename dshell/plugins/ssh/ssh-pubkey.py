@@ -89,7 +89,7 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
             # Calculate key fingerprints
             info['host_fingerprints'] = {}
             for hash_scheme in ("md5", "sha1", "sha256"):
-                # nosec B303 - MD5/SHA1 are standard SSH fingerprint display formats per RFC 4716
+                # nosec B303,B324 - MD5/SHA1 are standard SSH fingerprint display formats per RFC 4716
                 hashfunction = getattr(hashlib, hash_scheme)
                 thisfp = key_fingerprint(info['host_pubkey'], hashfunction)
                 info['host_fingerprints'][hash_scheme] = ':'.join(
