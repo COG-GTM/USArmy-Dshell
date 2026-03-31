@@ -185,6 +185,10 @@ and file requested. If the --ftp_dump flag is set, it also dumps the file into t
             if self.dump and 'filedata' in info and info['filedata']:
                 origname = info['file'][0] + '_' + os.path.join(*info['file'][1:3])
                 outname = dshell.util.gen_local_filename(self.outdir, origname)
+                # Verify path is safe
+                if not os.path.realpath(outname).startswith(os.path.realpath(self.outdir)):
+                    self.log("Skipping file with suspicious path: %s" % origname)
+                    continue
                 with open(outname, 'wb') as fh:
                     fh.write(info['filedata'])
                 numbytes = len(info['filedata'])
@@ -284,6 +288,10 @@ and file requested. If the --ftp_dump flag is set, it also dumps the file into t
                 if self.dump and info['filedata']:
                     origname = info['file'][0] + '_' + os.path.join(*info['file'][1:3])
                     outname = dshell.util.gen_local_filename(self.outdir, origname)
+                    # Verify path is safe
+                    if not os.path.realpath(outname).startswith(os.path.realpath(self.outdir)):
+                        self.log("Skipping file with suspicious path: %s" % origname)
+                        continue
                     with open(outname, 'wb') as fh:
                         fh.write(info['filedata'])
                     numbytes = len(info['filedata'])

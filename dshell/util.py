@@ -140,13 +140,23 @@ def gen_local_filename(path, origname):
             localname += c
         else:
             localname += "%%%02X" % ord(c)
+    # Reject path traversal sequences early
+    if '..' in tmp:
+        raise ValueError(f"Path traversal detected: {origname} contains '..' sequence")
+
     localname = os.path.join(path, localname)
     postfix = ''
     i = 0
     while os.path.exists(localname + postfix):
         i += 1
         postfix = "_{:04d}".format(i)
-    return localname + postfix
+
+    # Verify resolved path stays within the output directory
+    resolved = os.path.realpath(localname + postfix)
+    safe_dir = os.path.realpath(path)
+    if not resolved.startswith(safe_dir + os.sep) and resolved != safe_dir:
+        raise ValueError(f"Path traversal detected: {origname} resolves outside {path}")
+    return resolved
 
 
 def human_readable_filesize(bytecount):

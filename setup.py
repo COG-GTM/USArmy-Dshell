@@ -6,7 +6,7 @@ setup(
     author="USArmyResearchLab",
     description="An extensible network forensic analysis framework",
     url="https://github.com/USArmyResearchLab/Dshell",
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     packages=find_packages(),
     package_data={
         "dshell": ["data/dshellrc", "data/GeoIP/readme.txt"],

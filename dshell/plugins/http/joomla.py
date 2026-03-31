@@ -63,7 +63,7 @@ Dshell> decode -d joomla --joomla_raw_payload *.pcap
 
             plaintext_cmd = self.attempt_decode(cmd)
             return plaintext_cmd
-        except:
+        except (ValueError, KeyError, IndexError):
             return None
 
     def http_handler(self, conn, request, response):
