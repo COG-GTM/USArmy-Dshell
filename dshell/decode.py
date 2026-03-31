@@ -575,8 +575,11 @@ def main_command_line():
                       help='List all available plugins', dest='list')
     parser.add_argument('-r', '--recursive', dest='recursive', action='store_true',
                       help='Recursively process all PCAP files under input directory')
+    # Create a secure temp directory for decompression with restrictive permissions
+    default_unzipdir = tempfile.mkdtemp(prefix='dshell_')
+    os.chmod(default_unzipdir, 0o700)
     parser.add_argument('--unzipdir', type=str, metavar="DIRECTORY",
-                      default=tempfile.gettempdir(),
+                      default=default_unzipdir,
                       help='Directory to use when decompressing input files (.gz, .bz2, and .zip only)')
     parser.add_argument('--conn-timeout', dest="conntimeout", type=int,
                       metavar="SECONDS", default=3600,

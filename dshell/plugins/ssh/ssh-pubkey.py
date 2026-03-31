@@ -7,6 +7,7 @@ from dshell.output.alertout import AlertOutput
 import struct
 import base64
 import hashlib
+import sys
 
 
 class DshellPlugin(dshell.core.ConnectionPlugin):
@@ -88,7 +89,8 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
             # Calculate key fingerprints
             info['host_fingerprints'] = {}
             for hash_scheme in ("md5", "sha1", "sha256"):
-                hashfunction = eval("hashlib."+hash_scheme)
+                # nosec B303,B324 - MD5/SHA1 are standard SSH fingerprint display formats per RFC 4716
+                hashfunction = getattr(hashlib, hash_scheme)
                 thisfp = key_fingerprint(info['host_pubkey'], hashfunction)
                 info['host_fingerprints'][hash_scheme] = ':'.join(
                     ['%02x' % b for b in thisfp])
@@ -149,7 +151,7 @@ class sshmessage:
 def key_fingerprint(ssh_pubkey, hashfunction=hashlib.sha256):
 
     # Treat as bytes, not string
-    if type(ssh_pubkey) == str:
+    if isinstance(ssh_pubkey, str):
         ssh_pubkey = ssh_pubkey.encode('utf-8')
 
     # Strip space from end
@@ -164,9 +166,9 @@ def key_fingerprint(ssh_pubkey, hashfunction=hashlib.sha256):
     # Try to decode key as base64
     try:
         keybin = base64.b64decode(ssh_pubkey)
-    except:
+    except (ValueError, TypeError) as exc:
         sys.stderr.write("Invalid key value:\n")
-        sys.stderr.write("  \"%s\":\n" % ssh_pubkey)
+        sys.stderr.write("  \"%s\": %s\n" % (ssh_pubkey, exc))
         return None
 
     # Fingerprint

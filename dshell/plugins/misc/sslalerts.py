@@ -93,7 +93,6 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
                 return None
             if content_type == SSL3_RT_ALERT:
                 handshake_len = struct.unpack("!I", data.read(4))[0]
-#                assert handshake_len == 2  # TODO remove when live
                 severity = struct.unpack("!B", data.read(1))[0]
                 if severity not in alert_severities:
                     continue

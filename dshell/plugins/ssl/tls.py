@@ -460,23 +460,14 @@ class TLS(object):
                 # Parse Handshake SubType
                 #
                 if HandshakeType == SSL3_MT_CLIENT_HELLO:
-                    try:
-                        self.Handshakes.append(TLSClientHello(
-                            HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
-                        raise
+                    self.Handshakes.append(TLSClientHello(
+                        HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
                 elif HandshakeType == SSL3_MT_SERVER_HELLO:
-                    try:
-                        self.Handshakes.append(TLSServerHello(
-                            HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
-                        raise
+                    self.Handshakes.append(TLSServerHello(
+                        HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
                 elif HandshakeType == SSL3_MT_CERTIFICATE:
-                    try:
-                        self.Handshakes.append(TLSCertificate(
-                            HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
-                        raise
+                    self.Handshakes.append(TLSCertificate(
+                        HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
 
                 offset += HandshakeLength
             ###############################
@@ -520,7 +511,7 @@ class TLSCertificate(TLSHandshake):
                 self.Certificates = self.__parse_certs(
                     data[offset:offset+certificates_length])
                 offset += certificates_length
-            except:
+            except (struct.error, InsufficientData):
                 offset += certificates_length
                 raise
         else:
@@ -540,11 +531,11 @@ class TLSCertificate(TLSHandshake):
                 try:
                     cert = OpenSSL.crypto.load_certificate(
                         OpenSSL.crypto.FILETYPE_ASN1, data[:clen])
-                except:
+                except (OpenSSL.crypto.Error, ValueError):
                     return certs
                 certs.append(cert)
                 data = data[clen:]
-            except:
+            except (struct.error, InsufficientData):
                 raise
         return certs
 
@@ -665,7 +656,7 @@ class TLSClientHello(TLSHandshake):
         # Copy Extension Blob into a new working variable
         try:
             extensions_data = data[offset:offset+self.extensions_length]
-        except:
+        except (IndexError, struct.error):
             raise InsufficientData('%d bytes received by TLSClientHello, expected %d for extensions' % (
                 data_length, offset + self.extensions_length))
 
@@ -719,7 +710,7 @@ class TLSClientHello(TLSHandshake):
 
     def ja3_digest(self):
         if ja3_available:
-            h = hashlib.md5(self.ja3().encode('utf-8'))
+            h = hashlib.md5(self.ja3().encode('utf-8'))  # nosec B303,B324 - MD5 required by JA3 specification
             return h.hexdigest()
         else:
             return None
@@ -799,12 +790,12 @@ def keyTypeToString(kt):
     else:
         try:
             return "UNKNOWN(%s)" % str(kt)
-        except:
+        except (TypeError, ValueError):
             return "UNKNOWN(%s)" % repr(kt)
 
 
 def parse_x509_dtm(dtm):
-    if type(dtm) == bytes:
+    if isinstance(dtm, bytes):
         dtm = dtm.decode('utf-8')
     # Fmt: YYYYMMDDhhmmssZ
     t = time.strptime(dtm, '%Y%m%d%H%M%SZ')
@@ -838,7 +829,7 @@ def openSSL_cert_to_info_dictionary(c):
     public_key = c.get_pubkey()
     d['pubkey_bits'] = public_key.bits()
     d['pubkey_type'] = keyTypeToString(public_key.type())
-    d['pubkey_sha1'] = hashlib.sha1(OpenSSL.crypto.dump_publickey(
+    d['pubkey_sha1'] = hashlib.sha1(OpenSSL.crypto.dump_publickey(  # nosec B303,B324 - SHA1 fingerprint for certificate identification
         OpenSSL.crypto.FILETYPE_ASN1, public_key)).hexdigest()
     return d
 
@@ -934,7 +925,7 @@ For JA3 support (ClientHello hash), install module pyja3
                 except UnsupportedOption:
                     self.log('Unsupported type: %s\n' % (sys.exc_info()[1]))
                     offset += len(data)
-                except:
+                except Exception:
                     offset += len(data)
                     self.log('Unknown error in connectionHandler: %s' %
                              sys.exc_info()[1])
@@ -968,7 +959,7 @@ For JA3 support (ClientHello hash), install module pyja3
         try:
             info['cipher_text'] = ciphersuit_text[struct.unpack('!H', server_cipher)[
                 0]]
-        except:
+        except (struct.error, TypeError, KeyError):
             info['cipher_text'] = 'UNKNOWN'
 
         #
