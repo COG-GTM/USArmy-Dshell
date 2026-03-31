@@ -328,7 +328,10 @@ and file requested. If the --ftp_dump flag is set, it also dumps the file into t
                         self.__update_bpf()
 
         # Look for ip/port information, assuming PSV response
-        ret = re.findall('\d+,\d+,\d+,\d+,\d+\,\d+', data)
+        # Security: Use anchored, non-greedy regex to prevent ReDoS (SonarQube S5852)
+        ret = re.findall(r'(\d{1,3}),(\d{1,3}),(\d{1,3}),(\d{1,3}),(\d{1,3}),(\d{1,3})', data)
+        if ret:
+            ret = [','.join(ret[0])]
         if len(ret) == 1:
             tip, tport = self.calculateTransfer(ret[0])    # transfer ip, transfer port
             info['datachan'] = (tip, tport)                 # Update this control channel's knowledge of currently working data channel

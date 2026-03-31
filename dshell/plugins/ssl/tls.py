@@ -718,8 +718,10 @@ class TLSClientHello(TLSHandshake):
             return None
 
     def ja3_digest(self):
+        # Note: JA3 standard requires MD5 for interoperability with threat intelligence feeds.
+        # MD5 is retained here intentionally per the JA3 specification.
         if ja3_available:
-            h = hashlib.md5(self.ja3().encode('utf-8'))
+            h = hashlib.md5(self.ja3().encode('utf-8'))  # noqa: S324 - JA3 standard requires MD5
             return h.hexdigest()
         else:
             return None
@@ -838,8 +840,11 @@ def openSSL_cert_to_info_dictionary(c):
     public_key = c.get_pubkey()
     d['pubkey_bits'] = public_key.bits()
     d['pubkey_type'] = keyTypeToString(public_key.type())
-    d['pubkey_sha1'] = hashlib.sha1(OpenSSL.crypto.dump_publickey(
-        OpenSSL.crypto.FILETYPE_ASN1, public_key)).hexdigest()
+    # Security: Use SHA-256 for public key fingerprint (SonarQube S4790, STIG V-220633)
+    pubkey_der = OpenSSL.crypto.dump_publickey(OpenSSL.crypto.FILETYPE_ASN1, public_key)
+    d['pubkey_sha256'] = hashlib.sha256(pubkey_der).hexdigest()
+    # Retain SHA-1 fingerprint for backward compatibility with existing tooling
+    d['pubkey_sha1'] = hashlib.sha1(pubkey_der).hexdigest()  # noqa: S324 - kept for backward compat
     return d
 
 

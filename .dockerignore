@@ -1,0 +1,19 @@
+# Security: Prevent sensitive files from being copied into Docker image
+# (SonarQube S6470, STIG V-220633)
+.git
+.gitignore
+.dockerignore
+*.md
+*.pdf
+*.tar.gz
+Dockerfile
+dist/
+scripts/
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.*
+*.key
+*.pem
+*.secret
