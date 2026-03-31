@@ -1,6 +1,10 @@
 FROM python:3-alpine as builder
 
-COPY . /src
+# Security: Copy only necessary files instead of entire repo (SonarQube S6470)
+COPY setup.py /src/setup.py
+COPY dshell/ /src/dshell/
+COPY README.md /src/README.md
+COPY LICENSE /src/LICENSE
 
 WORKDIR /src
 
@@ -24,10 +28,18 @@ COPY --from=builder "${VIRTUAL_ENV}/" "${VIRTUAL_ENV}/"
 
 RUN apk add --no-cache bash libstdc++ libpcap
 
+# Security: Create non-root user to run container (SonarQube S6471, STIG V-220629)
+RUN addgroup -S dshell && adduser -S dshell -G dshell
+
 VOLUME ["/data"]
 
 WORKDIR "/data"
 
+# Ensure the non-root user can access the data volume
+RUN chown dshell:dshell /data
+
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+USER dshell
 
 ENTRYPOINT ["dshell"]

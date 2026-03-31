@@ -110,10 +110,14 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
                             cert_data_len = struct.unpack("!I", b"\x00"+data.read(3))[0]
                             cert_data = data.read(cert_data_len)
                             bytes_processed = 3 + cert_data_len
-                            sha1 = hashlib.sha1(cert_data).hexdigest()
+                            # Security: Use SHA-256 as primary hash, retain SHA-1 for
+                            # backward compatibility with abuse.ch blacklist format
+                            # (SonarQube S4790, STIG V-220633)
+                            sha256 = hashlib.sha256(cert_data).hexdigest()
+                            sha1 = hashlib.sha1(cert_data).hexdigest()  # noqa: S324 - required by abuse.ch format
                             if sha1 in self.hashes:
                                 bad_guy = self.hashes[sha1]
-                                self.write("Certificate hash match: {}".format(bad_guy), **conn.info())
+                                self.write("Certificate hash match: {} (sha256: {})".format(bad_guy, sha256), **conn.info())
                         except struct.error as e:
                             break
                 else:
