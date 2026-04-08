@@ -41,7 +41,9 @@ https://ma.ttias.be/remote-code-execution-via-http-request-in-iis-on-windows/
                 # check range value to reduce false positive rate
                 if not rangestr.endswith('18446744073709551615'):
                     return
-            except:
+            # STIG: Application Security and Development (V-222596)
+            # Use specific exception types instead of bare except clauses
+            except Exception:
                 return
             self.write('MS15-034 DoS [Request Method: "{0}" URI: "{1}" Range: "{2}"]'.format(request.method, request.uri, rangestr), conn.info())
             return conn, request, response
@@ -52,7 +54,9 @@ https://ma.ttias.be/remote-code-execution-via-http-request-in-iis-on-windows/
                 rangestr = request.headers.get("range", '')
                 if not rangestr.endswith('18446744073709551615'):
                     return
-            except:
+            # STIG: Application Security and Development (V-222596)
+            # Use specific exception types instead of bare except clauses
+            except Exception:
                 return
 
             # indication of vulnerable server

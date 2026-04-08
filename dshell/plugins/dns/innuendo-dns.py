@@ -77,7 +77,9 @@ class DshellPlugin(DNSPlugin):
 
                         # here would be a good place to decrypt the payload (if you have the keys)
                         # decrypt_payload( answer )
-                    except:
+                    # STIG: Application Security and Development (V-222596)
+                    # Use specific exception types instead of bare except clauses
+                    except Exception:
                         return None
                 return conn, requests, responses
 

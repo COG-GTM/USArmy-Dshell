@@ -460,22 +460,24 @@ class TLS(object):
                 # Parse Handshake SubType
                 #
                 if HandshakeType == SSL3_MT_CLIENT_HELLO:
+                    # STIG: Application Security and Development (V-222596)
+                    # Use specific exception types instead of bare except clauses
                     try:
                         self.Handshakes.append(TLSClientHello(
                             HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
+                    except Exception:
                         raise
                 elif HandshakeType == SSL3_MT_SERVER_HELLO:
                     try:
                         self.Handshakes.append(TLSServerHello(
                             HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
+                    except Exception:
                         raise
                 elif HandshakeType == SSL3_MT_CERTIFICATE:
                     try:
                         self.Handshakes.append(TLSCertificate(
                             HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
+                    except Exception:
                         raise
 
                 offset += HandshakeLength
@@ -516,11 +518,13 @@ class TLSCertificate(TLSHandshake):
                 '%d bytes received by TLSCertificate, expected %d for client_version' % (data_length, offset + 2))
 
         if data_length >= offset + certificates_length:
+            # STIG: Application Security and Development (V-222596)
+            # Use specific exception types instead of bare except clauses
             try:
                 self.Certificates = self.__parse_certs(
                     data[offset:offset+certificates_length])
                 offset += certificates_length
-            except:
+            except Exception:
                 offset += certificates_length
                 raise
         else:
@@ -537,14 +541,16 @@ class TLSCertificate(TLSHandshake):
                 if len(data) < clen:
                     raise InsufficientData(
                         '%d bytes in buffer, need %d' % (len(data), clen))
+                # STIG: Application Security and Development (V-222596)
+                # Use specific exception types instead of bare except clauses
                 try:
                     cert = OpenSSL.crypto.load_certificate(
                         OpenSSL.crypto.FILETYPE_ASN1, data[:clen])
-                except:
+                except Exception:
                     return certs
                 certs.append(cert)
                 data = data[clen:]
-            except:
+            except Exception:
                 raise
         return certs
 
@@ -663,9 +669,11 @@ class TLSClientHello(TLSHandshake):
             return
 
         # Copy Extension Blob into a new working variable
+        # STIG: Application Security and Development (V-222596)
+        # Use specific exception types instead of bare except clauses
         try:
             extensions_data = data[offset:offset+self.extensions_length]
-        except:
+        except Exception:
             raise InsufficientData('%d bytes received by TLSClientHello, expected %d for extensions' % (
                 data_length, offset + self.extensions_length))
 
@@ -797,9 +805,11 @@ def keyTypeToString(kt):
     if kt in keytypes:
         return keytypes[kt]
     else:
+        # STIG: Application Security and Development (V-222596)
+        # Use specific exception types instead of bare except clauses
         try:
             return "UNKNOWN(%s)" % str(kt)
-        except:
+        except Exception:
             return "UNKNOWN(%s)" % repr(kt)
 
 
@@ -934,10 +944,11 @@ For JA3 support (ClientHello hash), install module pyja3
                 except UnsupportedOption:
                     self.log('Unsupported type: %s\n' % (sys.exc_info()[1]))
                     offset += len(data)
-                except:
+                # STIG: Application Security and Development (V-222596)
+                # Use specific exception types instead of bare except clauses
+                except Exception as e:
                     offset += len(data)
-                    self.log('Unknown error in connectionHandler: %s' %
-                             sys.exc_info()[1])
+                    self.log('Unknown error in connectionHandler: %s' % e)
                     break
 
         # Post processing
@@ -965,10 +976,12 @@ For JA3 support (ClientHello hash), install module pyja3
         else:
             cipher_index = None
         info['cipher_index'] = cipher_index
+        # STIG: Application Security and Development (V-222596)
+        # Use specific exception types instead of bare except clauses
         try:
             info['cipher_text'] = ciphersuit_text[struct.unpack('!H', server_cipher)[
                 0]]
-        except:
+        except Exception:
             info['cipher_text'] = 'UNKNOWN'
 
         #
