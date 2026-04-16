@@ -99,6 +99,8 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
                     continue
                 hashfunction = getattr(hashlib, hash_scheme)
                 thisfp = key_fingerprint(info['host_pubkey'], hashfunction)
+                if thisfp is None:
+                    continue
                 info['host_fingerprints'][hash_scheme] = ':'.join(
                     ['%02x' % b for b in thisfp])
 
