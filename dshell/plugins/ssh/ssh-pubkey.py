@@ -7,6 +7,11 @@ from dshell.output.alertout import AlertOutput
 import struct
 import base64
 import hashlib
+import sys
+
+# STIG: Application Security and Development (V-222596)
+# Defense-in-depth validation for hash scheme names
+ALLOWED_HASH_SCHEMES = frozenset(("md5", "sha1", "sha256"))
 
 
 class DshellPlugin(dshell.core.ConnectionPlugin):
@@ -87,9 +92,15 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
         if 'host_pubkey' in info:
             # Calculate key fingerprints
             info['host_fingerprints'] = {}
+            # STIG: Application Security and Development (V-222596)
+            # Replaced eval() with getattr() to prevent code injection
             for hash_scheme in ("md5", "sha1", "sha256"):
-                hashfunction = eval("hashlib."+hash_scheme)
+                if hash_scheme not in ALLOWED_HASH_SCHEMES:
+                    continue
+                hashfunction = getattr(hashlib, hash_scheme)
                 thisfp = key_fingerprint(info['host_pubkey'], hashfunction)
+                if thisfp is None:
+                    continue
                 info['host_fingerprints'][hash_scheme] = ':'.join(
                     ['%02x' % b for b in thisfp])
 
@@ -164,7 +175,9 @@ def key_fingerprint(ssh_pubkey, hashfunction=hashlib.sha256):
     # Try to decode key as base64
     try:
         keybin = base64.b64decode(ssh_pubkey)
-    except:
+    # STIG: Application Security and Development (V-222596)
+    # Use specific exception types instead of bare except clauses
+    except Exception as e:
         sys.stderr.write("Invalid key value:\n")
         sys.stderr.write("  \"%s\":\n" % ssh_pubkey)
         return None

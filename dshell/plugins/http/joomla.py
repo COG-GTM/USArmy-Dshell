@@ -63,7 +63,9 @@ Dshell> decode -d joomla --joomla_raw_payload *.pcap
 
             plaintext_cmd = self.attempt_decode(cmd)
             return plaintext_cmd
-        except:
+        # STIG: Application Security and Development (V-222596)
+        # Use specific exception types instead of bare except clauses
+        except Exception:
             return None
 
     def http_handler(self, conn, request, response):

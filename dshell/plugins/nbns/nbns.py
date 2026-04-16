@@ -138,9 +138,11 @@ Examples:
         op = (op >> 11) & 15
 
         # Decode protocol info if it was present in the payload
+        # STIG: Application Security and Development (V-222596)
+        # Use specific exception types instead of bare except clauses
         try: 
             self.prot_info = nbns_op[op]
-        except:
+        except Exception:
             self.prot_info = "0x{}".format(op_hex)
 
         # Extract the MAC address from the ethernet layer of the packet
