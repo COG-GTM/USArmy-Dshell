@@ -7,7 +7,7 @@ Based on colorout module originally written by amm
 from dshell.output.output import Output
 import dshell.util
 import dshell.core
-from xml.sax.saxutils import escape
+from html import escape
 
 class HTMLOutput(Output):
     _DESCRIPTION = "HTML format output"
