@@ -138,8 +138,9 @@ class HTTPFile(object):
             self.plugin.warning("Incomplete file: {!r}".format(self.filename))
             try:
                 os.rename(self.filename, self.filename + "_INCOMPLETE")
-            except:
-                pass
+            except OSError as e:
+                self.plugin.warning(
+                    "Could not rename incomplete file {!r}: {!s}".format(self.filename, e))
             ls = 0
             le = 0
             for s, e in self.ranges:
@@ -163,14 +164,17 @@ class HTTPFile(object):
                 try:
                     if int(m.group(3)) > self.size:
                         self.size = int(m.group(3))
-                except:
-                    pass
+                except (ValueError, TypeError) as e:
+                    self.plugin.debug(
+                        "Ignoring malformed content-range total {!r}: {!s}".format(m.group(3), e))
         elif 'content-length' in response.headers:
             try:
                 if int(response.headers['content-length']) > self.size:
                     self.size = int(response.headers['content-length'])
-            except:
-                pass
+            except (ValueError, TypeError) as e:
+                self.plugin.debug(
+                    "Ignoring malformed content-length {!r}: {!s}".format(
+                        response.headers['content-length'], e))
         # Update range tracking
         self.ranges.append((range_start, range_end))
         # Write part of file
