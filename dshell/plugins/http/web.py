@@ -49,7 +49,9 @@ class DshellPlugin(HTTPPlugin):
             status = response.status
             reason = response.reason
             if self.md5:
-                hash = "(md5: {})".format(md5(response.body).hexdigest())
+                # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-md5
+                hash = "(md5: {})".format(
+                    md5(response.body, usedforsecurity=False).hexdigest())
             else:
                 hash = ""
         else:

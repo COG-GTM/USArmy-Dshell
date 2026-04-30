@@ -7,7 +7,11 @@ Based on colorout module originally written by amm
 from dshell.output.output import Output
 import dshell.util
 import dshell.core
-from xml.sax.saxutils import escape
+# Only `escape()` is imported (HTML output escaping); no XML is parsed in
+# this module, so the XXE attack surface that defusedxml mitigates does
+# not apply here. Pre-existing import retained pending a Wave-N follow-up
+# that may switch to `html.escape` for stylistic consistency.
+from xml.sax.saxutils import escape  # nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
 
 class HTMLOutput(Output):
     _DESCRIPTION = "HTML format output"
