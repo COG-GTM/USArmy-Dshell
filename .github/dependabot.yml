@@ -1,0 +1,36 @@
+# Dependabot configuration for COG-GTM/USArmy-Dshell.
+#
+# Wave-3 of the DSOP Shift-Left remediation: pair the SHA-pinned
+# `.github/workflows/security.yml` with automated bumps that *preserve*
+# pinning. `insecure-external-code-execution: deny` and the implicit
+# pin-to-SHA behaviour of `version-updates` for github-actions ensure
+# that automated PRs cannot replace a pinned SHA with a floating tag.
+#
+# Mapped controls: NIST SI-2 (Flaw Remediation), SR-3 (Supply Chain
+# Risk), STIG V-220641 (least-privilege workflow + maintained deps).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci(deps)"
+      include: scope
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: "deps"
+      include: scope
+    insecure-external-code-execution: deny

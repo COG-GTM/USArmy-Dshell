@@ -8,6 +8,12 @@ import struct
 import base64
 import hashlib
 
+# Allow-list of hashlib algorithms permitted for SSH host-key fingerprint
+# display. Sourced from RFC 4253 (md5, sha1) and current OpenSSH defaults
+# (sha256). Replaces a prior eval("hashlib." + name) construction
+# (STIG V-220632 / NIST SI-10 / CWE-95).
+_ALLOWED_FINGERPRINT_HASHES = ("md5", "sha1", "sha256", "sha384", "sha512")
+
 
 class DshellPlugin(dshell.core.ConnectionPlugin):
 
@@ -85,10 +91,16 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
         #print(repr(info))
 
         if 'host_pubkey' in info:
-            # Calculate key fingerprints
+            # Calculate key fingerprints. MD5/SHA1 are protocol-mandated
+            # display formats for SSH host-key fingerprints (RFC 4253);
+            # they are identifiers shown to operators, not used to
+            # establish confidentiality or integrity.
             info['host_fingerprints'] = {}
             for hash_scheme in ("md5", "sha1", "sha256"):
-                hashfunction = eval("hashlib."+hash_scheme)
+                if hash_scheme not in _ALLOWED_FINGERPRINT_HASHES:
+                    raise ValueError(
+                        "Unsupported fingerprint hash: %r" % hash_scheme)
+                hashfunction = getattr(hashlib, hash_scheme)
                 thisfp = key_fingerprint(info['host_pubkey'], hashfunction)
                 info['host_fingerprints'][hash_scheme] = ':'.join(
                     ['%02x' % b for b in thisfp])
