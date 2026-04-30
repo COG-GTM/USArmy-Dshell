@@ -110,6 +110,7 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
                             cert_data_len = struct.unpack("!I", b"\x00"+data.read(3))[0]
                             cert_data = data.read(cert_data_len)
                             bytes_processed = 3 + cert_data_len
+                            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
                             sha1 = hashlib.sha1(
                                 cert_data, usedforsecurity=False).hexdigest()
                             if sha1 in self.hashes:

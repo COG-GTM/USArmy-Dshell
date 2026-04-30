@@ -719,6 +719,7 @@ class TLSClientHello(TLSHandshake):
 
     def ja3_digest(self):
         if ja3_available:
+            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-md5
             h = hashlib.md5(self.ja3().encode('utf-8'), usedforsecurity=False)
             return h.hexdigest()
         else:
@@ -838,6 +839,7 @@ def openSSL_cert_to_info_dictionary(c):
     public_key = c.get_pubkey()
     d['pubkey_bits'] = public_key.bits()
     d['pubkey_type'] = keyTypeToString(public_key.type())
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
     d['pubkey_sha1'] = hashlib.sha1(
         OpenSSL.crypto.dump_publickey(
             OpenSSL.crypto.FILETYPE_ASN1, public_key),
