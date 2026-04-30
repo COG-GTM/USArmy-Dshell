@@ -1,0 +1,10 @@
+# DSOP Shift-Left Wave 1: pin runtime dependencies for reproducible builds.
+# Versions resolved 2026-04-30 from latest stable PyPI; pip-audit + osv-scanner
+# both clean (zero vulnerabilities) at these pins. See dsop/dsop-plan.md.
+# cATO Gate G5 (reproducible build) — closes lockfile FAIL.
+geoip2==5.2.0
+pcapy-ng==1.1.0
+pypacker==5.4
+pyOpenSSL==26.1.0
+elasticsearch==9.3.0
+tabulate==0.10.0

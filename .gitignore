@@ -1,5 +1,42 @@
+# Python build / cache
 *.pyc
-__pycache__
-Dshell.egg-info
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+Dshell.egg-info/
 build/
+dist/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.envrc
+
+# Editor / IDE
 .idea/
+.vscode/
+*.swp
+*.swo
+
+# Test / coverage / profile
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+.pytest_cache/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Local runtime artefacts
+*.pcap.local
+*.log
