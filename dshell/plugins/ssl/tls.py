@@ -16,6 +16,20 @@ try:
 except ModuleNotFoundError:
     ja3_available = False
 
+# JA4 / JA4S support.  Prefer an externally installed ``ja4`` package if one is
+# present (none currently exists on PyPI; FoxIO's reference implementation at
+# https://github.com/FoxIO-LLC/ja4 ships a tshark-driven CLI rather than a
+# library).  Otherwise we fall back to the in-tree ``_ja4`` module which
+# implements the JA4 specification against Dshell's already-parsed handshake
+# structures.
+try:
+    import ja4 as _ja4_external  # type: ignore  # noqa: F401
+    ja4_available = True
+except (ModuleNotFoundError, ImportError):
+    _ja4_external = None
+    ja4_available = True  # in-tree implementation is always available
+from dshell.plugins.ssl import _ja4 as _ja4_local
+
 
 ##################################################################################################
 #
@@ -724,6 +738,32 @@ class TLSClientHello(TLSHandshake):
         else:
             return None
 
+    def _ja4_compute(self):
+        """Return the dict of JA4 fingerprints for this ClientHello."""
+        if getattr(self, '_ja4_cache', None) is None:
+            try:
+                self._ja4_cache = _ja4_local.compute_ja4(self)
+            except Exception:
+                self._ja4_cache = {}
+        return self._ja4_cache
+
+    def ja4(self):
+        """Return the JA4 fingerprint string (hashed/sorted form).
+
+        Format: ``{type}{version}{SNI}{ciphers_count}{extensions_count}{ALPN}
+        _{cipher_hash}_{extension_hash}`` per
+        https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4.md
+        """
+        return self._ja4_compute().get('ja4')
+
+    def ja4_raw(self):
+        """Return the raw (non-hashed) JA4 fingerprint string."""
+        return self._ja4_compute().get('ja4_r')
+
+    def ja4_digest(self):
+        """Alias for :meth:`ja4` -- the JA4 fingerprint already embeds hashes."""
+        return self.ja4()
+
 
 #####################################################################
 # TLSServerHello - ServerHello Handshake type
@@ -787,6 +827,46 @@ class TLSServerHello(TLSHandshake):
         else:
             raise InsufficientData(
                 '%d bytes received by TLSServerHello, expected %d for compression_method' % (data_length, offset + 1))
+
+        # self.raw_extensions (parsed for JA4S).  ServerHello extensions are
+        # optional; older TLS versions may omit them entirely.  We tolerate
+        # truncated/malformed extension blobs by stopping at the first
+        # inconsistency rather than raising, since they aren't required by
+        # the rest of the plugin.
+        self.raw_extensions = []
+        if data_length >= offset + 2:
+            extensions_length = struct.unpack(
+                '!H', data[offset:offset + 2])[0]
+            offset += 2
+            extensions_data = data[offset:offset + extensions_length]
+            while len(extensions_data) >= 4:
+                ex_type, ex_length = struct.unpack(
+                    '!HH', extensions_data[:4])
+                if len(extensions_data) < 4 + ex_length:
+                    break
+                this_extension_data = extensions_data[4:4 + ex_length]
+                extensions_data = extensions_data[4 + ex_length:]
+                self.raw_extensions.append((ex_type, this_extension_data))
+
+    def _ja4s_compute(self):
+        """Return the dict of JA4S fingerprints for this ServerHello."""
+        if getattr(self, '_ja4s_cache', None) is None:
+            try:
+                self._ja4s_cache = _ja4_local.compute_ja4s(self)
+            except Exception:
+                self._ja4s_cache = {}
+        return self._ja4s_cache
+
+    def ja4s(self):
+        """Return the JA4S fingerprint string (hashed form).
+
+        See https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4S.md
+        """
+        return self._ja4s_compute().get('ja4s')
+
+    def ja4s_raw(self):
+        """Return the raw (non-hashed) JA4S fingerprint string."""
+        return self._ja4s_compute().get('ja4s_r')
 
 
 ##############################################################################
@@ -864,13 +944,18 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
             longdescription="""
 Extract interesting metadata from TLS connection setup, including the ClientHello and Certificate handshake structures.
 
-For JA3 support (ClientHello hash), install module pyja3
+For JA3 support (ClientHello hash), install module pyja3.
+JA4 (ClientHello) and JA4S (ServerHello) fingerprints are always emitted using
+the in-tree implementation in dshell/plugins/ssl/_ja4.py, derived from the
+FoxIO JA4+ specification (https://github.com/FoxIO-LLC/ja4).
             """
         )
 
     def premodule(self):
         if not ja3_available:
             self.debug("ja3 capability disabled due to missing python module")
+        if not ja4_available:
+            self.debug("ja4 capability disabled")
 
     def connection_handler(self, conn):
 
@@ -911,10 +996,16 @@ For JA3 support (ClientHello hash), install module pyja3
                                 if ja3_available:
                                     info['ja3'] = hs.ja3()
                                     info['ja3_digest'] = hs.ja3_digest()
+                                if ja4_available:
+                                    info['ja4'] = hs.ja4()
+                                    info['ja4_r'] = hs.ja4_raw()
                                 client_cipher_list = hs.cipher_suites
 
                             elif hs.HandshakeType == SSL3_MT_SERVER_HELLO:
                                 server_cipher = hs.cipher_suite
+                                if ja4_available:
+                                    info['ja4s'] = hs.ja4s()
+                                    info['ja4s_r'] = hs.ja4s_raw()
 
                             #
                             # Certificate.  Looking for first server cert.
