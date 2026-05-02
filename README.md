@@ -37,7 +37,15 @@ Key features:
   * used in the elasticout output module
   * only necessary if planning to use elasticsearch to store output
 * [pyJA3](https://github.com/salesforce/ja3/tree/master/python)
-  * used in the tls plugin
+  * used in the tls plugin to compute the JA3 ClientHello fingerprint
+
+## Built-in TLS Fingerprinting
+* JA4 / JA4S fingerprints (per the [FoxIO JA4+ specification](https://github.com/FoxIO-LLC/ja4))
+  are computed by the `tls` plugin out of the box -- no extra dependency is required.
+  The implementation lives in `dshell/plugins/ssl/_ja4.py` and operates on the
+  ClientHello/ServerHello structures parsed by the plugin itself.  If a
+  pip-installable `ja4` library becomes available in the future, the plugin
+  will prefer it; otherwise the bundled implementation is used.
 
 ## Installation
 
