@@ -3,6 +3,7 @@
 from .core import ConnectionPlugin, PacketPlugin, Packet
 # TODO: Make decode.process_files()/main() function more API friendly through documentation and unwrapping the kwargs
 from .api import get_plugins, get_plugin_information
+from .util import count_live_interfaces
 
 from .output.alertout import AlertOutput
 from .output.colorout import ColorOutput

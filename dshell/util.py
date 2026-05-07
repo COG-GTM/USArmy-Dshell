@@ -5,6 +5,8 @@ A collection of useful utilities used in several plugins and libraries.
 import os
 import string
 
+import pcapy
+
 
 def xor(xinput, key):
     """
@@ -159,3 +161,20 @@ def human_readable_filesize(bytecount):
             return "{:3.2f} {}".format(bytecount, unit)
         bytecount /= 1024.0
     return "{:3.2f} {}".format(bytecount, "YB")
+
+
+def count_live_interfaces():
+    """
+    Returns the number of live network interfaces available for packet capture.
+
+    Uses pcapy.findalldevs() to enumerate interfaces that pcap can capture on.
+    May require superuser privileges to see all interfaces.
+
+    :returns: Number of available network interfaces.
+    :rtype: int
+    """
+    try:
+        interfaces = pcapy.findalldevs()
+        return len(interfaces)
+    except pcapy.PcapError:
+        return 0
