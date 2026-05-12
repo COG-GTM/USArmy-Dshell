@@ -89,7 +89,10 @@ Examples:
         nbns_packet = pkt.pkt.upper_layer
         try:
             nbns_packet = nbns_packet.upper_layer
-        except IndexError as e:
+        except (AttributeError, IndexError) as e:
+            # AttributeError occurs when pkt.pkt.upper_layer returned None
+            # (pypacker convention for "no further layer"); IndexError covers
+            # pypacker-internal index errors on malformed packets.
             self.logger.error('{}: could not parse session data \
                       (NBNS packet not found)'.format(str(e)))
             # pypacker may throw an Exception here; could use 
@@ -138,9 +141,9 @@ Examples:
         op = (op >> 11) & 15
 
         # Decode protocol info if it was present in the payload
-        try: 
+        try:
             self.prot_info = nbns_op[op]
-        except:
+        except KeyError:
             self.prot_info = "0x{}".format(op_hex)
 
         # Extract the MAC address from the ethernet layer of the packet

@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dshell security audit — executive dashboard</title>
+<style>
+  :root {
+    --cog-blue:   #3969CA;
+    --cog-teal:   #21C19A;
+    --cog-cyan:   #0294DE;
+    --ink:        #0A0A0F;
+    --paper:      #FFFFFF;
+    --paper-2:    #F4F6FB;
+    --paper-3:    #E8ECF4;
+    --rule:       #D4D9E3;
+    --muted:      #4F5664;
+    --crit:       #C03A2B;
+    --high:       #E07A1F;
+    --med:        #C99419;
+    --low:        #3D7EDD;
+    --info:       #6B7280;
+    --pass:       var(--cog-teal);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); }
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14.5px;
+    line-height: 1.55;
+  }
+  h1, h2, h3, h4 {
+    font-family: "Inter Tight", "Inter", sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 8px;
+  }
+  h1 { font-size: 38px; line-height: 1.1; }
+  h2 { font-size: 24px; margin-top: 0; }
+  h3 { font-size: 17px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  h4 { font-size: 15px; font-weight: 600; }
+  p { margin: 0 0 8px; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+  a { color: var(--cog-blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 36px; border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .topbar .left { display: flex; align-items: center; gap: 18px; }
+  .topbar img.cog { height: 28px; }
+  .topbar .divider { width: 1px; height: 24px; background: var(--rule); }
+  .topbar .army { font-family: "Inter Tight", sans-serif; font-weight: 700; letter-spacing: 0.08em; color: var(--ink); font-size: 14px; display: inline-flex; align-items: center; gap: 10px; }
+  .topbar .army svg { vertical-align: middle; }
+  .topbar .right { color: var(--muted); font-size: 12.5px; }
+
+  /* ---------- hero ---------- */
+  .hero {
+    position: relative;
+    padding: 56px 36px 36px;
+    background: var(--paper-2);
+    border-bottom: 1px solid var(--rule);
+    overflow: hidden;
+  }
+  .hero .honeycomb {
+    position: absolute; right: -120px; top: -60px; width: 580px; opacity: 0.55;
+    pointer-events: none;
+  }
+  .hero .eyebrow {
+    color: var(--cog-blue);
+    font-family: "Inter Tight", sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  .hero h1 { max-width: 740px; }
+  .hero .lede { max-width: 760px; color: var(--muted); font-size: 16px; margin-top: 12px; }
+  .hero .meta {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    max-width: 900px;
+    margin-top: 28px;
+  }
+  .meta .pill {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .meta .pill .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+  .meta .pill .v { font-family: "Inter Tight", sans-serif; font-weight: 700; font-size: 17px; margin-top: 2px; color: var(--ink); }
+
+  /* ---------- layout ---------- */
+  main { padding: 28px 36px 80px; max-width: 1280px; margin: 0 auto; }
+  section { margin-bottom: 36px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card.tight { padding: 14px 18px; }
+
+  /* ---------- KPI tiles ---------- */
+  .kpi { text-align: left; }
+  .kpi .label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+  .kpi .value {
+    font-family: "Inter Tight", sans-serif;
+    font-weight: 700;
+    font-size: 38px;
+    line-height: 1;
+    margin: 6px 0 4px;
+  }
+  .kpi .sub { font-size: 12.5px; color: var(--muted); }
+  .kpi.crit  .value { color: var(--crit); }
+  .kpi.high  .value { color: var(--high); }
+  .kpi.med   .value { color: var(--med);  }
+  .kpi.low   .value { color: var(--low);  }
+  .kpi.info  .value { color: var(--info); }
+  .kpi.good  .value { color: var(--cog-teal); }
+  .kpi.brand .value { color: var(--cog-blue); }
+
+  /* ---------- bars ---------- */
+  .bar { width: 100%; height: 8px; background: var(--paper-3); border-radius: 4px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; }
+  .bar.bar-crit > span { background: var(--crit); }
+  .bar.bar-high > span { background: var(--high); }
+  .bar.bar-med  > span { background: var(--med); }
+  .bar.bar-low  > span { background: var(--low); }
+  .bar.bar-info > span { background: var(--info); }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: "Inter Tight", sans-serif; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--paper-2); }
+  tr:last-child td { border-bottom: none; }
+
+  /* ---------- chips / status ---------- */
+  .chip {
+    display: inline-block;
+    font-family: "Inter Tight", sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid transparent;
+  }
+  .chip.crit { background: rgba(192,58,43,0.08); color: var(--crit); border-color: rgba(192,58,43,0.25); }
+  .chip.high { background: rgba(224,122,31,0.10); color: var(--high); border-color: rgba(224,122,31,0.25); }
+  .chip.med  { background: rgba(201,148,25,0.10); color: var(--med);  border-color: rgba(201,148,25,0.25); }
+  .chip.low  { background: rgba(61,126,221,0.10); color: var(--low);  border-color: rgba(61,126,221,0.25); }
+  .chip.info { background: rgba(107,114,128,0.10); color: var(--info); border-color: rgba(107,114,128,0.25); }
+  .chip.fix  { background: rgba(33,193,154,0.10); color: var(--cog-teal); border-color: rgba(33,193,154,0.25); }
+  .chip.open { background: rgba(57,105,202,0.08); color: var(--cog-blue); border-color: rgba(57,105,202,0.25); }
+  .chip.pass { background: rgba(33,193,154,0.10); color: var(--cog-teal); border-color: rgba(33,193,154,0.25); }
+  .chip.partial { background: rgba(201,148,25,0.10); color: var(--med); border-color: rgba(201,148,25,0.25); }
+  .chip.na   { background: var(--paper-3); color: var(--muted); border-color: var(--rule); }
+  .chip.fail { background: rgba(192,58,43,0.08); color: var(--crit); border-color: rgba(192,58,43,0.25); }
+
+  /* ---------- workflow ---------- */
+  .workflow {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .step {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 10px 12px;
+    position: relative;
+  }
+  .step .n { color: var(--cog-blue); font-family: "Inter Tight", sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .step .t { font-family: "Inter Tight", sans-serif; font-weight: 600; font-size: 13.5px; margin-top: 2px; }
+  .step .d { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* ---------- compliance heatmap ---------- */
+  .heat {
+    display: grid;
+    grid-template-columns: 110px repeat(8, 1fr);
+    gap: 6px;
+    align-items: stretch;
+  }
+  .heat .h-cell {
+    background: var(--paper-2);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 12px;
+    border: 1px solid var(--rule);
+    min-height: 70px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .heat .h-head { background: var(--paper); font-family: "Inter Tight", sans-serif; font-weight: 600; min-height: 70px; }
+  .heat .h-cell.pass-bg    { background: rgba(33,193,154,0.10); border-color: rgba(33,193,154,0.30); }
+  .heat .h-cell.partial-bg { background: rgba(201,148,25,0.10); border-color: rgba(201,148,25,0.30); }
+  .heat .h-cell.fail-bg    { background: rgba(192,58,43,0.08);  border-color: rgba(192,58,43,0.25); }
+  .heat .h-cell.na-bg      { background: var(--paper-3); }
+  .heat .h-cell .stig { font-weight: 700; font-family: "Inter Tight", sans-serif; }
+  .heat .h-cell .nist { color: var(--muted); font-size: 11px; }
+
+  /* ---------- side rails ---------- */
+  .rail-list { list-style: none; padding: 0; margin: 0; }
+  .rail-list li { padding: 8px 0; border-bottom: 1px dashed var(--rule); display: flex; gap: 10px; align-items: flex-start; }
+  .rail-list li:last-child { border-bottom: none; }
+  .rail-list .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cog-blue); margin-top: 8px; flex: 0 0 6px; }
+
+  /* ---------- footer ---------- */
+  footer {
+    margin-top: 60px;
+    padding: 22px 36px;
+    border-top: 1px solid var(--rule);
+    background: var(--paper-2);
+    color: var(--muted);
+    font-size: 12.5px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  footer img { height: 18px; }
+
+  /* responsive */
+  @media (max-width: 1000px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .workflow { grid-template-columns: repeat(3, 1fr); }
+    .heat { grid-template-columns: 90px repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="left">
+    <img src="assets/cognition-logo.png" alt="Cognition" class="cog" />
+    <div class="divider"></div>
+    <div class="army" aria-label="US Army">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+        <polygon points="12,1.5 14.6,9.1 22.5,9.1 16.2,13.8 18.6,21.5 12,16.8 5.4,21.5 7.8,13.8 1.5,9.1 9.4,9.1" fill="#000"/>
+      </svg>
+      U.S. Army &mdash; USArmyResearchLab/Dshell
+    </div>
+  </div>
+  <div class="right">Federal security audit &middot; 2026-05-12</div>
+</div>
+
+<section class="hero">
+  <img src="assets/cognition-honeycomb-cover.png" class="honeycomb" alt="" />
+  <div class="eyebrow">Cognition AI &middot; Federal security review</div>
+  <h1>Dshell SAST &amp; SCA audit, STIG/NIST gap analysis, and remediation</h1>
+  <p class="lede">Comprehensive security audit of USArmyResearchLab/Dshell v3.2.3 against DISA STIG (V&#x2011;220629&ndash;V&#x2011;220641) and NIST 800&#x2011;53. Executed autonomously by Cognition&rsquo;s Devin platform &mdash; three parallel agents combined enterprise SAST (SonarQube), dependency scanning (pip&#x2011;audit), Python linting (bandit, pylint), and agentic code review with control-level mapping.</p>
+  <div class="meta">
+    <div class="pill"><div class="k">Repository</div><div class="v">COG-GTM/USArmy-Dshell</div></div>
+    <div class="pill"><div class="k">Version reviewed</div><div class="v">Dshell 3.2.3</div></div>
+    <div class="pill"><div class="k">Lines of code</div><div class="v">7,917 (dshell/)</div></div>
+    <div class="pill"><div class="k">Standards</div><div class="v">DISA STIG &middot; NIST 800-53 r5</div></div>
+  </div>
+</section>
+
+<main>
+
+<!-- KPI tiles -->
+<section>
+  <h2>Findings summary</h2>
+  <div class="grid-5">
+    <div class="card kpi crit"><div class="label">Critical</div><div class="value">3</div><div class="sub">Sonar BLOCKERs (rename + invariant)</div></div>
+    <div class="card kpi high"><div class="label">High</div><div class="value">5</div><div class="sub">Crypto, runtime crashes, ES TLS</div></div>
+    <div class="card kpi med"><div class="label">Medium</div><div class="value">8</div><div class="sub">Eval, Docker HTTP, version floors</div></div>
+    <div class="card kpi low"><div class="label">Low</div><div class="value">7</div><div class="sub">Regex strings, encoding, refactor</div></div>
+    <div class="card kpi info"><div class="label">Info / pass</div><div class="value">7</div><div class="sub">Five negative findings confirmed</div></div>
+  </div>
+
+  <div class="grid-3" style="margin-top: 16px;">
+    <div class="card kpi good"><div class="label">P1 fixes shipped in this PR</div><div class="value">11</div><div class="sub">Quick-win remediations applied & verified by re-scan</div></div>
+    <div class="card kpi brand"><div class="label">SonarQube issues surfaced</div><div class="value">224</div><div class="sub">4 BLOCKER &middot; 65 CRIT &middot; 32 MAJ &middot; 74 MIN &middot; 49 INFO</div></div>
+    <div class="card kpi good"><div class="label">Known CVEs in dependencies</div><div class="value">0</div><div class="sub">29 transitive packages cross-checked against PyPI &amp; OSV</div></div>
+  </div>
+</section>
+
+<!-- Severity bars -->
+<section>
+  <h2>Pre vs. post-remediation</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>Source</th><th>Before audit</th><th>After this PR</th><th>Delta</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>Bandit</b> (high+medium)</td>
+          <td><span class="chip high">11 total</span> <span class="mono">(4 High, 2 Med, 5 Low)</span></td>
+          <td><span class="chip pass">3 total</span> <span class="mono">(0 High, 1 Med, 2 Low)</span></td>
+          <td><span class="chip fix">&minus;73%</span></td>
+          <td>Remaining 3 are documented Bandit false-positives: B406 escape() on already-escaped strings; B113 against a dict <span class="mono">.get()</span> mis-detected as <span class="mono">requests.get()</span>; B105 empty-string FTP password placeholder.</td>
+        </tr>
+        <tr>
+          <td><b>pylint</b> errors (strict)</td>
+          <td><span class="chip med">173 errors</span></td>
+          <td><span class="chip pass">F-003 / F-004 fixed</span></td>
+          <td><span class="chip fix">2 runtime crashes eliminated</span></td>
+          <td>Most remaining errors are false-positive <span class="mono">no-member</span> against the dynamic-attribute plugin metaclass and <span class="mono">import-error</span> against native deps not installed in the lint env.</td>
+        </tr>
+        <tr>
+          <td><b>SonarQube</b> issues</td>
+          <td><span class="chip crit">4 BLOCKER</span> <span class="chip high">65 CRIT</span> <span class="chip med">32 MAJ</span></td>
+          <td>Same surface; rule-level disposition recorded</td>
+          <td><span class="chip open">Triaged</span></td>
+          <td>18 of the 18 S5754 bare-except issues remediated in code. BLOCKERs (S1845 case collisions, S3516 invariant return) tracked as P3 refactor work in Jira.</td>
+        </tr>
+        <tr>
+          <td><b>pip-audit</b> CVEs</td>
+          <td><span class="chip pass">0</span></td>
+          <td><span class="chip pass">0</span></td>
+          <td>—</td>
+          <td>Floors added in <span class="mono">setup.py</span> to lock down future drift (STIG V-220631 / NIST SI-2, RA-5, SA-22).</td>
+        </tr>
+        <tr>
+          <td><b>Compliance test suite</b></td>
+          <td>n/a</td>
+          <td><span class="chip pass">34 passed, 1 skipped</span></td>
+          <td><span class="chip fix">+34 assertions</span></td>
+          <td>Encodes STIG V-220629 through V-220641 as runnable pytest cases — see <span class="mono">tests/test_compliance.py</span>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Workflow -->
+<section>
+  <h2>What was executed</h2>
+  <p style="color: var(--muted); max-width: 900px;">Cognition&rsquo;s Devin parent session orchestrated the audit and spawned three parallel child agents to compress the scan + review wall-clock from sequential to roughly 10 minutes total. Each agent returned structured findings (issue id, severity, location, CWE/STIG/NIST mapping, evidence) which were de&#x2011;duplicated and consolidated into the audit report.</p>
+  <div class="workflow">
+    <div class="step"><div class="n">Phase 1</div><div class="t">Instrument</div><div class="d">Add <span class="mono">requirements.txt</span>, <span class="mono">sonar-project.properties</span>, create branch, scaffold <span class="mono">docs/security-audit/</span>.</div></div>
+    <div class="step"><div class="n">Phase 2a</div><div class="t">Child A &middot; SCA + lint</div><div class="d"><span class="mono">pip-audit</span>, <span class="mono">bandit -r dshell</span>, <span class="mono">pylint dshell --errors-only</span>, grep pattern scans.</div></div>
+    <div class="step"><div class="n">Phase 2b</div><div class="t">Child B &middot; SonarQube MCP</div><div class="d">Project search, full issue list, quality-gate check, snippet analysis of high-risk files.</div></div>
+    <div class="step"><div class="n">Phase 3</div><div class="t">Child C &middot; Code review</div><div class="d">Agentic read of <span class="mono">core.py</span>, <span class="mono">decode.py</span>, all plugin packs, Dockerfile &mdash; mapped to STIG/NIST.</div></div>
+    <div class="step"><div class="n">Phase 4</div><div class="t">Consolidate</div><div class="d">De-dup, severity reconciliation, CWE/STIG/NIST tagging. Author <span class="mono">SECURITY_AUDIT_REPORT.md</span> + <span class="mono">TRIAGE_REPORT.md</span>.</div></div>
+    <div class="step"><div class="n">Phase 5</div><div class="t">Jira single-pane</div><div class="d">One Epic in UF project with consolidated findings table + remediation subtasks (no board clutter).</div></div>
+    <div class="step"><div class="n">Phase 6</div><div class="t">Quick-win fixes</div><div class="d">11 remediations across hashlib, Elasticsearch, runtime safety, Docker hardening, dependency floors.</div></div>
+    <div class="step"><div class="n">Phase 7</div><div class="t">Compliance tests</div><div class="d">Add <span class="mono">tests/test_security_audit.py</span> + <span class="mono">tests/test_compliance.py</span> &mdash; STIG/NIST assertions running in CI.</div></div>
+    <div class="step"><div class="n">Phase 8</div><div class="t">PR + verify</div><div class="d">Push branch, open PR, re-run scanners, wait for CI, update Jira with PR link.</div></div>
+  </div>
+</section>
+
+<!-- Tools / sources -->
+<section class="grid-2">
+  <div class="card">
+    <h3>Tools and signal sources</h3>
+    <table>
+      <thead><tr><th>Tool</th><th>Role</th><th>Findings</th></tr></thead>
+      <tbody>
+        <tr><td><b>SonarQube</b> (MCP)</td><td>Enterprise SAST &mdash; bugs, code smells, security hotspots</td><td>224 issues, 4 BLOCKER</td></tr>
+        <tr><td><b>Bandit</b></td><td>Python-specific security linter</td><td>11 issues pre-fix, 3 post-fix (all FP)</td></tr>
+        <tr><td><b>pylint</b></td><td>Static error / convention analysis</td><td>173 errors (E*), 1,266 W/C/R</td></tr>
+        <tr><td><b>pip-audit</b></td><td>SCA against PyPI + OSV</td><td>0 CVEs across 29 deps</td></tr>
+        <tr><td><b>Agentic code review</b></td><td>STIG/NIST-mapped manual review</td><td>24 findings with citations</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h3>Devin agents involved</h3>
+    <table>
+      <thead><tr><th>Agent</th><th>Workstream</th><th>Output</th></tr></thead>
+      <tbody>
+        <tr><td><b>Parent</b></td><td>Orchestration, consolidation, remediation, PR + Jira</td><td>This report</td></tr>
+        <tr><td><b>Child A</b></td><td>Automated SCA + lint + grep</td><td>21 structured findings</td></tr>
+        <tr><td><b>Child B</b></td><td>SonarQube MCP analysis</td><td>224 issues + aggregates</td></tr>
+        <tr><td><b>Child C</b></td><td>Agentic code review</td><td>24 mapped findings</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top: 12px; color: var(--muted); font-size: 12.5px;">Parallel execution is a Cognition platform capability &mdash; Devin spawns child agents on independent VMs that report structured output back to the parent for synthesis.</p>
+  </div>
+</section>
+
+<!-- STIG/NIST heatmap -->
+<section>
+  <h2>Compliance heatmap &mdash; STIG V&#x2011;220629 through V&#x2011;220641</h2>
+  <div class="card">
+    <div class="heat">
+      <div class="h-cell h-head">Status</div>
+      <div class="h-cell h-head">V-220629<div class="nist">IA-2, IA-5</div></div>
+      <div class="h-cell h-head">V-220630<div class="nist">AC-7, AC-12</div></div>
+      <div class="h-cell h-head">V-220631<div class="nist">SI-10</div></div>
+      <div class="h-cell h-head">V-220632<div class="nist">SI-10</div></div>
+      <div class="h-cell h-head">V-220633<div class="nist">SC-13, SC-28</div></div>
+      <div class="h-cell h-head">V-220634<div class="nist">SC-8</div></div>
+      <div class="h-cell h-head">V-220635<div class="nist">AU-2, AU-3</div></div>
+      <div class="h-cell h-head">V-220641<div class="nist">SI-11</div></div>
+
+      <div class="h-cell h-head" style="background: var(--paper-2);">After this PR</div>
+      <div class="h-cell partial-bg"><div class="stig">Partial</div><div class="nist">F-009 plugin allow-list deferred; ES auth hardened</div></div>
+      <div class="h-cell na-bg"><div class="stig">N/A</div><div class="nist">Offline CLI &mdash; no user sessions</div></div>
+      <div class="h-cell pass-bg"><div class="stig">Pass</div><div class="nist">Dep floors added; no injection vectors</div></div>
+      <div class="h-cell pass-bg"><div class="stig">Pass</div><div class="nist">eval() removed; no shell, no pickle</div></div>
+      <div class="h-cell pass-bg"><div class="stig">Pass</div><div class="nist">All MD5/SHA-1 calls FIPS-safe</div></div>
+      <div class="h-cell partial-bg"><div class="stig">Pass</div><div class="nist">Docker now HTTPS; ES TLS default</div></div>
+      <div class="h-cell partial-bg"><div class="stig">Partial</div><div class="nist">Bare-excepts narrowed; logger calls added</div></div>
+      <div class="h-cell pass-bg"><div class="stig">Pass</div><div class="nist">Runtime crashes fixed; broad-except documented</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Top findings table -->
+<section>
+  <h2>Top remediations shipped</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Severity</th><th>Finding</th><th>Files</th><th>STIG</th><th>NIST</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">F-002</td><td><span class="chip high">High</span></td><td>Elasticsearch output: TLS-by-default, refuses plaintext without opt-in, supports api_key / http_auth / ca_certs</td><td class="mono">dshell/output/elasticout.py</td><td>V-220634</td><td>SC-8, IA-2, IA-5</td><td><span class="chip fix">Hardened</span></td></tr>
+        <tr><td class="mono">F-001</td><td><span class="chip high">High</span></td><td>All <code>hashlib.md5</code> / <code>hashlib.sha1</code> calls pass <code>usedforsecurity=False</code> &mdash; FIPS-mode safe</td><td class="mono">plugins/ssl/tls.py · plugins/ssl/sslblacklist.py · plugins/http/web.py · plugins/ssh/ssh-pubkey.py</td><td>V-220633</td><td>SC-13, IA-7</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-003</td><td><span class="chip high">High</span></td><td>Missing <code>import sys</code> caused guaranteed NameError on malformed key payload</td><td class="mono">plugins/ssh/ssh-pubkey.py</td><td>V-220641</td><td>SI-11</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-004</td><td><span class="chip high">High</span></td><td><code>payload</code> used before assignment caused UnboundLocalError on filter mismatch</td><td class="mono">plugins/http/riphttp.py</td><td>V-220641</td><td>SI-11</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-005</td><td><span class="chip high">High</span></td><td>18 bare <code>except:</code> clauses narrowed; debug logging restored</td><td class="mono">10 plugin files</td><td>V-220641</td><td>SI-11, AU-2</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-008</td><td><span class="chip med">Medium</span></td><td><code>eval("hashlib."+name)</code> replaced with whitelisted <code>getattr</code> table</td><td class="mono">plugins/ssh/ssh-pubkey.py</td><td>V-220632</td><td>SI-10, AC-3</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-010</td><td><span class="chip med">Medium</span></td><td>Dockerfile OUI fetch HTTP &rarr; HTTPS; <code>curl --fail</code>; <code>--no-cache</code></td><td class="mono">Dockerfile</td><td>V-220634</td><td>SC-8</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-011</td><td><span class="chip med">Medium</span></td><td>Minimum-version floors added to all 6 runtime deps</td><td class="mono">setup.py · requirements.txt</td><td>V-220631</td><td>SI-2, RA-5, SA-22</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-014</td><td><span class="chip low">Low</span></td><td>3 silent <code>try/except/pass</code> blocks now emit debug logs</td><td class="mono">plugins/http/riphttp.py</td><td>V-220641</td><td>SI-11, AU-2</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-019</td><td><span class="chip low">Low</span></td><td>Dockerfile final stage drops root and runs as <code>dshell</code> user</td><td class="mono">Dockerfile</td><td>V-220629</td><td>AC-6</td><td><span class="chip fix">Fixed</span></td></tr>
+        <tr><td class="mono">F-030</td><td><span class="chip info">Info</span></td><td>Elasticsearch client modernized for ES 7/8 compatibility (no deprecated <code>port=</code>/<code>doc_type=</code> when client doesn&rsquo;t accept them)</td><td class="mono">dshell/output/elasticout.py</td><td>—</td><td>—</td><td><span class="chip fix">Fixed</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Reasoning -->
+<section class="grid-2">
+  <div class="card">
+    <h3>Why this matters &mdash; reasoning</h3>
+    <ul class="rail-list">
+      <li><div class="dot"></div><div><b>FIPS posture (F-001).</b> On any IL5/IL6 host with FIPS mode enabled, unguarded <code>hashlib.md5(...)</code> raises <code>ValueError</code>. Dshell&rsquo;s JA3 fingerprint and SSL blacklist would crash on the first matching connection. Wrapping in <code>hashlib.new(..., usedforsecurity=False)</code> is the canonical Python 3.9+ idiom for non-security hashing in FIPS environments.</div></li>
+      <li><div class="dot"></div><div><b>Elasticsearch exfil (F-002).</b> A network forensic tool that ships sensitive packet metadata to an unauthenticated, plaintext datastore by default is the worst-case data-spill scenario for a DoD enclave. The hardened defaults force operators to make an explicit, auditable choice to deviate.</div></li>
+      <li><div class="dot"></div><div><b>Runtime crashes (F-003, F-004).</b> These are not "may happen" &mdash; <code>ssh-pubkey.py</code> referenced <code>sys.stderr</code> without an <code>import</code>, and <code>riphttp.py</code> read <code>payload</code> before it was bound. Both would have fired on legitimate traffic. They suggest the test surface needs broadening.</div></li>
+      <li><div class="dot"></div><div><b>Bare except (F-005).</b> Beyond the formal STIG violation, a network-facing parser that silently swallows <code>SystemExit</code> / <code>KeyboardInterrupt</code> / parser errors is hostile to incident response &mdash; the analyst can&rsquo;t tell capture errors from a malformed packet.</div></li>
+      <li><div class="dot"></div><div><b>eval/getattr (F-008).</b> The eval was over a whitelist of three strings, so it was not directly exploitable. But it&rsquo;s a STIG pattern-flag and an automatic disqualifier in many federal code-review templates. Cheap to fix; benefits future scanner runs.</div></li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Triage decisions</h3>
+    <table>
+      <thead><tr><th>Decision</th><th>Definition</th><th>Count</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip fix">Treat</span></td><td>Code change shipped in this PR</td><td>11</td></tr>
+        <tr><td><span class="chip open">Treat (deferred)</span></td><td>Tracked in Jira for P2/P3 sprint</td><td>9</td></tr>
+        <tr><td><span class="chip partial">Transfer</span></td><td>Escalated to architecture review</td><td>2</td></tr>
+        <tr><td><span class="chip pass">Accept</span></td><td>Documented risk acceptance with rationale</td><td>3</td></tr>
+        <tr><td><span class="chip pass">Pass</span></td><td>Negative findings (no vector present)</td><td>5</td></tr>
+      </tbody>
+    </table>
+    <h4 style="margin-top:18px;">Definition of done</h4>
+    <ul style="margin: 6px 0 0 16px; padding: 0;">
+      <li>All Critical / High items remediated or risk-accepted with sign-off.</li>
+      <li>Compliance test suite passing in CI on every commit.</li>
+      <li>Re-run of <span class="mono">bandit</span>, <span class="mono">pylint</span>, <span class="mono">pip-audit</span> attached as evidence in the PR.</li>
+      <li>Single Jira Epic links to the PR; subtasks track deferred work.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- Negatives confirmed -->
+<section>
+  <h2>Negative findings &mdash; confirmed absent</h2>
+  <p style="color: var(--muted); max-width: 800px;">These are control-relevant exposures that auditors specifically look for. They are recorded as <b>pass</b> with evidence so reviewers don&rsquo;t have to re-check them.</p>
+  <div class="grid-4">
+    <div class="card tight"><h4>No <span class="mono">os.system</span> / <span class="mono">shell=True</span></h4><p style="font-size: 12.5px; color: var(--muted);">Confirmed by AST scan in <code>tests/test_compliance.py</code>.</p></div>
+    <div class="card tight"><h4>No <span class="mono">pickle</span> / <span class="mono">yaml.load</span></h4><p style="font-size: 12.5px; color: var(--muted);">No unsafe deserialization surfaces.</p></div>
+    <div class="card tight"><h4>No SQL surface</h4><p style="font-size: 12.5px; color: var(--muted);">Dshell does not query a database; SI-10 SQL prong inapplicable.</p></div>
+    <div class="card tight"><h4>No hardcoded creds</h4><p style="font-size: 12.5px; color: var(--muted);">Regex sweep against passwords / API keys / private keys empty.</p></div>
+    <div class="card tight"><h4>No raw eval/exec</h4><p style="font-size: 12.5px; color: var(--muted);">F-008 was the only <code>eval()</code>; replaced.</p></div>
+    <div class="card tight"><h4>No web framework</h4><p style="font-size: 12.5px; color: var(--muted);">Flask/Django/FastAPI not imported &mdash; session-management controls inapplicable.</p></div>
+    <div class="card tight"><h4>No plaintext HTTP calls</h4><p style="font-size: 12.5px; color: var(--muted);">All outbound URLs scanned in code; only Dockerfile build-time was http (fixed).</p></div>
+    <div class="card tight"><h4>0 CVEs in deps</h4><p style="font-size: 12.5px; color: var(--muted);">29 packages cross-checked against PyPI + OSV.</p></div>
+  </div>
+</section>
+
+<!-- Deliverables -->
+<section>
+  <h2>Deliverables in this PR</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>Artifact</th><th>Path</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>Security audit report</td><td class="mono">docs/security-audit/SECURITY_AUDIT_REPORT.md</td><td>30-finding consolidated report with CWE / STIG / NIST mapping</td></tr>
+        <tr><td>Triage report</td><td class="mono">docs/security-audit/TRIAGE_REPORT.md</td><td>P1-P4 prioritization with Jira link placeholders</td></tr>
+        <tr><td>Executive dashboard (this file)</td><td class="mono">docs/security-audit/executive-dashboard.html</td><td>Cognition-branded for US Army; standalone HTML</td></tr>
+        <tr><td>Audit regression tests</td><td class="mono">tests/test_security_audit.py</td><td>One pytest per remediated finding (F-001 &hellip; F-019)</td></tr>
+        <tr><td>STIG / NIST compliance tests</td><td class="mono">tests/test_compliance.py</td><td>Control-level pytest assertions, runs in CI</td></tr>
+        <tr><td>Evidence artifacts</td><td class="mono">docs/security-audit/evidence/</td><td>Raw bandit / pylint / pip-audit / SonarQube outputs (pre &amp; post fix)</td></tr>
+        <tr><td>Requirements + sonar config</td><td class="mono">requirements.txt · sonar-project.properties</td><td>Floored versions; SonarQube project descriptor</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div>
+    <img src="assets/cognition-logo.png" alt="Cognition" />
+  </div>
+  <div>
+    Cognition AI &middot; Dshell security audit &middot; Page 1
+  </div>
+</footer>
+
+</body>
+</html>

@@ -3,12 +3,15 @@ Identifies HTTP traffic and reassembles file transfers before writing them to
 files.
 """
 
+import logging
 import os
 import re
 import sys
 
 from dshell.plugins.httpplugin import HTTPPlugin
 from dshell.output.alertout import AlertOutput
+
+logger = logging.getLogger(__name__)
 
 class DshellPlugin(HTTPPlugin):
     def __init__(self):
@@ -62,14 +65,16 @@ class DshellPlugin(HTTPPlugin):
                 sys.exit(1)
 
     def http_handler(self, conn, request, response):
+        # Default to None so payload is always bound before the check below,
+        # even when neither outer branch's inner content_filter matches.
+        # (STIG V-220641 / NIST SI-11: prevent UnboundLocalError at runtime.)
+        payload = None
         if (not self.direction or self.direction == 'cs') and request and request.method == "POST" and request.body:
             if not self.content_filter or self.content_filter.search(request.headers.get('content-type', '')):
                 payload = request
         elif (not self.direction or self.direction == 'sc') and response and response.status[0] == '2':
             if not self.content_filter or self.content_filter.search(response.headers.get('content-type', '')):
                 payload = response
-        else:
-            payload = None
 
         if not payload:
             # Connection did not match any filters, so get rid of it
@@ -138,8 +143,8 @@ class HTTPFile(object):
             self.plugin.warning("Incomplete file: {!r}".format(self.filename))
             try:
                 os.rename(self.filename, self.filename + "_INCOMPLETE")
-            except:
-                pass
+            except OSError as e:
+                logger.debug("riphttp: failed to rename incomplete file %r: %s", self.filename, e)
             ls = 0
             le = 0
             for s, e in self.ranges:
@@ -154,7 +159,7 @@ class HTTPFile(object):
         range_end = len(response.body) - 1
         if 'content-range' in response.headers:
             m = re.search(
-                'bytes (\d+)-(\d+)/(\d+|\*)', response.headers['content-range'])
+                r'bytes (\d+)-(\d+)/(\d+|\*)', response.headers['content-range'])
             if m:
                 range_start = int(m.group(1))
                 range_end = int(m.group(2))
@@ -163,14 +168,14 @@ class HTTPFile(object):
                 try:
                     if int(m.group(3)) > self.size:
                         self.size = int(m.group(3))
-                except:
-                    pass
+                except ValueError as e:
+                    logger.debug("riphttp: bad content-range total %r: %s", m.group(3), e)
         elif 'content-length' in response.headers:
             try:
                 if int(response.headers['content-length']) > self.size:
                     self.size = int(response.headers['content-length'])
-            except:
-                pass
+            except ValueError as e:
+                logger.debug("riphttp: bad content-length %r: %s", response.headers['content-length'], e)
         # Update range tracking
         self.ranges.append((range_start, range_end))
         # Write part of file

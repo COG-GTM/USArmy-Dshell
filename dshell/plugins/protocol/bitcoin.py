@@ -126,7 +126,7 @@ Examples:
             data = blob.data
             data_str = ''.join(chr(x) for x in data)
             data_len = len(data)
-        except:
+        except (TypeError, ValueError):
             self.logger.error('could not parse session data')
             return
 
@@ -196,7 +196,7 @@ Examples:
         try:
             magic_val = data[0:4].hex().upper()
             magic_val = ' '.join([magic_val[i:i+2] for i in range(0, len(magic_val), 2)])
-        except:
+        except (AttributeError, ValueError):
             self.logger.error('could not parse session data')
             return 
 
@@ -208,7 +208,7 @@ Examples:
             self.bc_net = str(MAGIC_VALS[magic_val])  
             if self.bc_net == 'BITCOIN-MAIN':
                 self.bcm_cache.add(conn.addr)
-        except:
+        except (AttributeError, KeyError):
             if conn.addr in self.bcm_cache:
                 self.bc_net = 'Potential BITCOIN-MAIN (part of connection which detected BITCOIN-MAIN traffic)'
             elif (blob.sport == 8333 or blob.dport == 8333):

@@ -4,9 +4,22 @@ Extract server ssh public key from key exchange
 
 import dshell.core
 from dshell.output.alertout import AlertOutput
-import struct
 import base64
 import hashlib
+import logging
+import struct
+import sys
+
+logger = logging.getLogger(__name__)
+
+# Whitelist of hash schemes used for SSH server-key fingerprinting. md5/sha1
+# are RFC-defined fingerprint formats; flagged with usedforsecurity=False so
+# this module can also run on FIPS-mode Python builds.
+_HASH_SCHEMES = {
+    "md5": lambda: hashlib.new("md5", usedforsecurity=False),
+    "sha1": lambda: hashlib.new("sha1", usedforsecurity=False),
+    "sha256": lambda: hashlib.new("sha256"),
+}
 
 
 class DshellPlugin(dshell.core.ConnectionPlugin):
@@ -87,9 +100,13 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
         if 'host_pubkey' in info:
             # Calculate key fingerprints
             info['host_fingerprints'] = {}
-            for hash_scheme in ("md5", "sha1", "sha256"):
-                hashfunction = eval("hashlib."+hash_scheme)
-                thisfp = key_fingerprint(info['host_pubkey'], hashfunction)
+            for hash_scheme, hashfactory in _HASH_SCHEMES.items():
+                thisfp = key_fingerprint(info['host_pubkey'], hashfactory)
+                if thisfp is None:
+                    # key_fingerprint() returns None on invalid base64
+                    # (STIG V-220641 / NIST SI-11); skip this scheme instead
+                    # of crashing the whole connection_handler.
+                    continue
                 info['host_fingerprints'][hash_scheme] = ':'.join(
                     ['%02x' % b for b in thisfp])
 
@@ -164,13 +181,17 @@ def key_fingerprint(ssh_pubkey, hashfunction=hashlib.sha256):
     # Try to decode key as base64
     try:
         keybin = base64.b64decode(ssh_pubkey)
-    except:
-        sys.stderr.write("Invalid key value:\n")
-        sys.stderr.write("  \"%s\":\n" % ssh_pubkey)
+    except (ValueError, TypeError, base64.binascii.Error) as e:
+        # STIG V-220641 / NIST SI-11: log generic error message; debug
+        # logger gets the full context.
+        sys.stderr.write("Invalid key value (skipping).\n")
+        logger.debug("key_fingerprint failed to base64-decode %r: %s", ssh_pubkey, e)
         return None
 
     # Fingerprint
-    return hashfunction(keybin).digest()
+    h = hashfunction() if callable(hashfunction) else hashfunction
+    h.update(keybin)
+    return h.digest()
 
 
 if __name__ == "__main__":
