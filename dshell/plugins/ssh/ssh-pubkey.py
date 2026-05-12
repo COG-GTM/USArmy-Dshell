@@ -102,6 +102,11 @@ class DshellPlugin(dshell.core.ConnectionPlugin):
             info['host_fingerprints'] = {}
             for hash_scheme, hashfactory in _HASH_SCHEMES.items():
                 thisfp = key_fingerprint(info['host_pubkey'], hashfactory)
+                if thisfp is None:
+                    # key_fingerprint() returns None on invalid base64
+                    # (STIG V-220641 / NIST SI-11); skip this scheme instead
+                    # of crashing the whole connection_handler.
+                    continue
                 info['host_fingerprints'][hash_scheme] = ':'.join(
                     ['%02x' % b for b in thisfp])
 
