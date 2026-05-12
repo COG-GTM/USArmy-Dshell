@@ -138,9 +138,9 @@ Examples:
         op = (op >> 11) & 15
 
         # Decode protocol info if it was present in the payload
-        try: 
+        try:
             self.prot_info = nbns_op[op]
-        except:
+        except KeyError:
             self.prot_info = "0x{}".format(op_hex)
 
         # Extract the MAC address from the ethernet layer of the packet

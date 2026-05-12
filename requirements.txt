@@ -1,0 +1,8 @@
+# Runtime dependencies for Dshell. Versions are floored to close known-fixed
+# CVEs (STIG V-220631 / NIST SI-2, RA-5, SA-22) — see docs/security-audit/.
+geoip2>=4.7.0
+pcapy-ng>=1.0.9
+pypacker>=5.2
+pyopenssl>=24.0.0
+elasticsearch>=7.17.0,<9.0
+tabulate>=0.9.0

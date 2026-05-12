@@ -1,0 +1,161 @@
+[main]	INFO	profile include tests: None
+[main]	INFO	profile exclude tests: None
+[main]	INFO	cli include tests: None
+[main]	INFO	cli exclude tests: None
+[main]	INFO	running on Python 3.12.8
+[warnings]	WARNING	invalid escape sequence '\('
+
+[warnings]	WARNING	invalid escape sequence '\('
+
+[warnings]	WARNING	invalid escape sequence '\d'
+
+[warnings]	WARNING	invalid escape sequence '\d'
+
+[warnings]	WARNING	invalid escape sequence '\d'
+
+Working... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:01
+Run started:2026-05-12 13:21:08.945898+00:00
+
+Test results:
+>> Issue: [B406:blacklist] Using escape to parse untrusted XML data is known to be vulnerable to XML attacks. Replace escape with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.
+   Severity: Low   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b406-import-xml-sax
+   Location: dshell/output/htmlout.py:10:0
+9	import dshell.core
+10	from xml.sax.saxutils import escape
+11	
+
+--------------------------------------------------
+>> Issue: [B113:request_without_timeout] Call to requests without timeout
+   Severity: Medium   Confidence: Low
+   CWE: CWE-400 (https://cwe.mitre.org/data/definitions/400.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b113_request_without_timeout.html
+   Location: dshell/plugins/dnsplugin.py:87:27
+86	        for id in all_ids:
+87	            request_list = requests.get(id, None)
+88	            response_list = responses.get(id, None)
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: ''
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: dshell/plugins/ftp/ftp.py:111:16
+110	                'user': '',
+111	                'pass': '',
+112	                'path': [],
+113	                'datachan': None,
+114	                'lastcommand': '',
+115	                'tempippair': None,
+116	                'filedata': None,
+117	                'file': ['', '', '']
+118	            }
+119	        elif self.dump and (conn.clientip, conn.clientport) in self.data_channel_map:
+120	            self.conns[conn.addr] = {
+121	                'mode': DATA_CONN,
+122	                'ctrlchan': self.data_channel_map[(conn.clientip, conn.clientport)],
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: dshell/plugins/http/riphttp.py:141:12
+140	                os.rename(self.filename, self.filename + "_INCOMPLETE")
+141	            except:
+142	                pass
+143	            ls = 0
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: dshell/plugins/http/riphttp.py:166:16
+165	                        self.size = int(m.group(3))
+166	                except:
+167	                    pass
+168	        elif 'content-length' in response.headers:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: dshell/plugins/http/riphttp.py:172:12
+171	                    self.size = int(response.headers['content-length'])
+172	            except:
+173	                pass
+174	        # Update range tracking
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: dshell/plugins/http/web.py:52:42
+51	            if self.md5:
+52	                hash = "(md5: {})".format(md5(response.body).hexdigest())
+53	            else:
+
+--------------------------------------------------
+>> Issue: [B307:blacklist] Use of possibly insecure function - consider using safer ast.literal_eval.
+   Severity: Medium   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b307-eval
+   Location: dshell/plugins/ssh/ssh-pubkey.py:91:31
+90	            for hash_scheme in ("md5", "sha1", "sha256"):
+91	                hashfunction = eval("hashlib."+hash_scheme)
+92	                thisfp = key_fingerprint(info['host_pubkey'], hashfunction)
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: dshell/plugins/ssl/sslblacklist.py:113:35
+112	                            bytes_processed = 3 + cert_data_len
+113	                            sha1 = hashlib.sha1(cert_data).hexdigest()
+114	                            if sha1 in self.hashes:
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: dshell/plugins/ssl/tls.py:722:16
+721	        if ja3_available:
+722	            h = hashlib.md5(self.ja3().encode('utf-8'))
+723	            return h.hexdigest()
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: dshell/plugins/ssl/tls.py:841:23
+840	    d['pubkey_type'] = keyTypeToString(public_key.type())
+841	    d['pubkey_sha1'] = hashlib.sha1(OpenSSL.crypto.dump_publickey(
+842	        OpenSSL.crypto.FILETYPE_ASN1, public_key)).hexdigest()
+843	    return d
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 7821
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 5
+		Medium: 2
+		High: 4
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 1
+		Medium: 1
+		High: 9
+Files skipped (0):

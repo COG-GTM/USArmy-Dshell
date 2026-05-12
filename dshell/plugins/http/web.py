@@ -5,7 +5,7 @@ Displays basic information for web requests/responses in a connection.
 from dshell.plugins.httpplugin import HTTPPlugin
 from dshell.output.alertout import AlertOutput
 
-from hashlib import md5
+import hashlib
 
 class DshellPlugin(HTTPPlugin):
     def __init__(self):
@@ -49,7 +49,9 @@ class DshellPlugin(HTTPPlugin):
             status = response.status
             reason = response.reason
             if self.md5:
-                hash = "(md5: {})".format(md5(response.body).hexdigest())
+                hash = "(md5: {})".format(
+                    hashlib.new('md5', response.body, usedforsecurity=False).hexdigest()
+                )
             else:
                 hash = ""
         else:

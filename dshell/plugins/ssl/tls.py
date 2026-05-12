@@ -463,19 +463,19 @@ class TLS(object):
                     try:
                         self.Handshakes.append(TLSClientHello(
                             HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
+                    except Exception:
                         raise
                 elif HandshakeType == SSL3_MT_SERVER_HELLO:
                     try:
                         self.Handshakes.append(TLSServerHello(
                             HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
+                    except Exception:
                         raise
                 elif HandshakeType == SSL3_MT_CERTIFICATE:
                     try:
                         self.Handshakes.append(TLSCertificate(
                             HandshakeType, HandshakeLength, data[offset:offset+HandshakeLength]))
-                    except:
+                    except Exception:
                         raise
 
                 offset += HandshakeLength
@@ -520,7 +520,7 @@ class TLSCertificate(TLSHandshake):
                 self.Certificates = self.__parse_certs(
                     data[offset:offset+certificates_length])
                 offset += certificates_length
-            except:
+            except Exception:
                 offset += certificates_length
                 raise
         else:
@@ -540,11 +540,11 @@ class TLSCertificate(TLSHandshake):
                 try:
                     cert = OpenSSL.crypto.load_certificate(
                         OpenSSL.crypto.FILETYPE_ASN1, data[:clen])
-                except:
+                except OpenSSL.crypto.Error:
                     return certs
                 certs.append(cert)
                 data = data[clen:]
-            except:
+            except Exception:
                 raise
         return certs
 
@@ -665,7 +665,7 @@ class TLSClientHello(TLSHandshake):
         # Copy Extension Blob into a new working variable
         try:
             extensions_data = data[offset:offset+self.extensions_length]
-        except:
+        except (IndexError, TypeError):
             raise InsufficientData('%d bytes received by TLSClientHello, expected %d for extensions' % (
                 data_length, offset + self.extensions_length))
 
@@ -719,7 +719,7 @@ class TLSClientHello(TLSHandshake):
 
     def ja3_digest(self):
         if ja3_available:
-            h = hashlib.md5(self.ja3().encode('utf-8'))
+            h = hashlib.new('md5', self.ja3().encode('utf-8'), usedforsecurity=False)
             return h.hexdigest()
         else:
             return None
@@ -799,7 +799,7 @@ def keyTypeToString(kt):
     else:
         try:
             return "UNKNOWN(%s)" % str(kt)
-        except:
+        except Exception:
             return "UNKNOWN(%s)" % repr(kt)
 
 
@@ -838,8 +838,8 @@ def openSSL_cert_to_info_dictionary(c):
     public_key = c.get_pubkey()
     d['pubkey_bits'] = public_key.bits()
     d['pubkey_type'] = keyTypeToString(public_key.type())
-    d['pubkey_sha1'] = hashlib.sha1(OpenSSL.crypto.dump_publickey(
-        OpenSSL.crypto.FILETYPE_ASN1, public_key)).hexdigest()
+    d['pubkey_sha1'] = hashlib.new('sha1', OpenSSL.crypto.dump_publickey(
+        OpenSSL.crypto.FILETYPE_ASN1, public_key), usedforsecurity=False).hexdigest()
     return d
 
 
@@ -934,7 +934,7 @@ For JA3 support (ClientHello hash), install module pyja3
                 except UnsupportedOption:
                     self.log('Unsupported type: %s\n' % (sys.exc_info()[1]))
                     offset += len(data)
-                except:
+                except Exception:
                     offset += len(data)
                     self.log('Unknown error in connectionHandler: %s' %
                              sys.exc_info()[1])
@@ -968,7 +968,7 @@ For JA3 support (ClientHello hash), install module pyja3
         try:
             info['cipher_text'] = ciphersuit_text[struct.unpack('!H', server_cipher)[
                 0]]
-        except:
+        except (KeyError, struct.error):
             info['cipher_text'] = 'UNKNOWN'
 
         #
