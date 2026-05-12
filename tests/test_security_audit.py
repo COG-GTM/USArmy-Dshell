@@ -106,7 +106,7 @@ def test_f002_elasticout_defaults_to_https() -> None:
 
 def test_f002_elasticout_refuses_plaintext_without_opt_in() -> None:
     """End-to-end: instantiating ElasticOutput over plaintext must fail."""
-    elasticsearch = pytest.importorskip("elasticsearch")  # noqa: F841
+    pytest.importorskip("elasticsearch")
     from dshell.output.elasticout import ElasticOutput
 
     with pytest.raises(ValueError, match="plaintext HTTP"):
