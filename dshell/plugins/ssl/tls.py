@@ -968,7 +968,9 @@ For JA3 support (ClientHello hash), install module pyja3
         try:
             info['cipher_text'] = ciphersuit_text[struct.unpack('!H', server_cipher)[
                 0]]
-        except (KeyError, struct.error):
+        except (KeyError, TypeError, struct.error):
+            # TypeError occurs when server_cipher is None (one-sided capture
+            # / missing ServerHello) and struct.unpack('!H', None) is called.
             info['cipher_text'] = 'UNKNOWN'
 
         #

@@ -92,6 +92,16 @@ def test_v220629_dockerfile_runtime_is_unprivileged() -> None:
 # ===========================================================================
 
 
+def _module_imports(path):
+    """Yield each module name imported by the file at ``path``."""
+    for node in ast.walk(_ast(path)):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield alias.name
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            yield node.module
+
+
 def test_v220630_not_applicable_to_offline_cli() -> None:
     """Dshell is an offline pcap-analysis CLI; no user sessions.
 
@@ -99,19 +109,13 @@ def test_v220630_not_applicable_to_offline_cli() -> None:
     framework does not establish remote sessions; AC-7/AC-12 are managed by
     the operator's host OS, not by Dshell itself.
     """
-    # Sanity check: ensure no web-server / network-listener framework is
-    # pulled in by the runtime — that would change applicability.
     forbidden_imports = {"flask", "django", "fastapi", "tornado", "aiohttp.web"}
-    found: set[str] = set()
-    for path in SOURCES:
-        for node in ast.walk(_ast(path)):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name.split(".")[0] in forbidden_imports:
-                        found.add(alias.name)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                if node.module.split(".")[0] in forbidden_imports:
-                    found.add(node.module)
+    found = {
+        name
+        for path in SOURCES
+        for name in _module_imports(path)
+        if name.split(".")[0] in forbidden_imports
+    }
     assert not found, (
         "Dshell now imports a web framework (%s); AC-7/AC-12 must be re-evaluated."
         % ", ".join(sorted(found))

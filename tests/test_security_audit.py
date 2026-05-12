@@ -138,7 +138,7 @@ def test_f004_riphttp_payload_initialised() -> None:
     src = _read(path)
     # Locate the http_handler block and assert payload is initialised at the top.
     m = re.search(
-        r"def http_handler\(self, conn, request, response\):\n(.*?)\n        if not payload:",
+        r"def http_handler\(self, conn, request, response\):\n(.*?)\n {8}if not payload:",
         src,
         flags=re.DOTALL,
     )

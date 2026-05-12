@@ -71,6 +71,55 @@ def _truthy(value):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _apply_tls_settings(client_kwargs, scheme, insecure, ca_certs, hosts):
+    """Configure TLS/plaintext options on the Elasticsearch client kwargs.
+    Splits the scheme handling out of __init__ to keep cognitive
+    complexity in bounds (Sonar python:S3776).
+    """
+    if scheme == "https":
+        client_kwargs["verify_certs"] = not insecure
+        if ca_certs:
+            client_kwargs["ca_certs"] = ca_certs
+        if insecure:
+            warnings.warn(
+                "elasticout: insecure=true requested; TLS certificate "
+                "verification is DISABLED. Do not use in production "
+                "(STIG V-220634 / NIST SC-8).",
+                stacklevel=2,
+            )
+        return
+    if scheme == "http":
+        if not insecure:
+            raise ValueError(
+                "elasticout: refusing to connect over plaintext HTTP. "
+                "Pass --oargs=\"insecure=true\" to acknowledge the risk "
+                "or use scheme=https (STIG V-220634 / NIST SC-8)."
+            )
+        logger.warning(
+            "elasticout: connecting to %s over plaintext HTTP; "
+            "data in transit is NOT encrypted.",
+            hosts,
+        )
+        return
+    raise ValueError(
+        "elasticout: scheme must be 'https' or 'http' (got %r)" % scheme
+    )
+
+
+def _apply_auth_settings(client_kwargs, api_key, http_auth):
+    """Configure auth on the Elasticsearch client kwargs."""
+    if api_key:
+        client_kwargs["api_key"] = api_key
+        return
+    if not http_auth:
+        return
+    if ":" in str(http_auth):
+        user, pw = str(http_auth).split(":", 1)
+        client_kwargs["http_auth"] = (user, pw)
+    else:
+        client_kwargs["http_auth"] = http_auth
+
+
 class ElasticOutput(dshell.output.jsonout.JSONOutput):
     """Elasticsearch output module.  Use with ``--output=elasticout``."""
 
@@ -79,18 +128,16 @@ class ElasticOutput(dshell.output.jsonout.JSONOutput):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs.copy())
 
-        self.options = {}
         host_value = kwargs.get("host", "localhost")
         default_port = int(kwargs.get("port", 9200))
         scheme = str(kwargs.get("scheme", "https")).lower()
         insecure = _truthy(kwargs.get("insecure", False))
-        api_key = kwargs.get("api_key")
-        http_auth = kwargs.get("http_auth")
-        ca_certs = kwargs.get("ca_certs")
 
-        self.options["index"] = kwargs.get("index", "dshell")
-        self.options["type"] = kwargs.get("type", "alerts")
-        self.options["scheme"] = scheme
+        self.options = {
+            "index": kwargs.get("index", "dshell"),
+            "type": kwargs.get("type", "alerts"),
+            "scheme": scheme,
+        }
 
         hosts = _parse_host(host_value, default_port)
         if not hosts:
@@ -99,43 +146,12 @@ class ElasticOutput(dshell.output.jsonout.JSONOutput):
             node["scheme"] = scheme
 
         client_kwargs = {"hosts": hosts}
-
-        if scheme == "https":
-            client_kwargs["verify_certs"] = not insecure
-            if ca_certs:
-                client_kwargs["ca_certs"] = ca_certs
-            if insecure:
-                warnings.warn(
-                    "elasticout: insecure=true requested; TLS certificate "
-                    "verification is DISABLED. Do not use in production "
-                    "(STIG V-220634 / NIST SC-8).",
-                    stacklevel=2,
-                )
-        elif scheme == "http":
-            if not insecure:
-                raise ValueError(
-                    "elasticout: refusing to connect over plaintext HTTP. "
-                    "Pass --oargs=\"insecure=true\" to acknowledge the risk "
-                    "or use scheme=https (STIG V-220634 / NIST SC-8)."
-                )
-            logger.warning(
-                "elasticout: connecting to %s over plaintext HTTP; "
-                "data in transit is NOT encrypted.",
-                hosts,
-            )
-        else:
-            raise ValueError(
-                "elasticout: scheme must be 'https' or 'http' (got %r)" % scheme
-            )
-
-        if api_key:
-            client_kwargs["api_key"] = api_key
-        elif http_auth:
-            if ":" in str(http_auth):
-                user, pw = str(http_auth).split(":", 1)
-                client_kwargs["http_auth"] = (user, pw)
-            else:
-                client_kwargs["http_auth"] = http_auth
+        _apply_tls_settings(
+            client_kwargs, scheme, insecure, kwargs.get("ca_certs"), hosts,
+        )
+        _apply_auth_settings(
+            client_kwargs, kwargs.get("api_key"), kwargs.get("http_auth"),
+        )
 
         self.es = Elasticsearch(**client_kwargs)
 
