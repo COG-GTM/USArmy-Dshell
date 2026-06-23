@@ -24,6 +24,7 @@ import base64
 import json
 import logging
 import os
+import shutil
 import time
 from abc import ABC, abstractmethod
 from typing import Optional
@@ -61,13 +62,12 @@ class SegmentPusher(ABC):
         """
         self._verify_integrity(segment)
 
-        envelope = self._build_envelope(segment)
         destination = self.describe_destination()
         last_exc: Optional[Exception] = None
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                self._deliver(segment, envelope)
+                self._deliver(segment)
                 self.audit.log("push", True, source=segment.pcap_path,
                                destination=destination, transport=self.transport,
                                attempt=attempt, sha256=segment.checksum)
@@ -91,8 +91,13 @@ class SegmentPusher(ABC):
                                       destination=destination)
 
     @abstractmethod
-    def _deliver(self, segment: Segment, envelope: dict) -> None:
-        """Transport-specific delivery of a single segment. Override required."""
+    def _deliver(self, segment: Segment) -> None:
+        """Transport-specific delivery of a single segment. Override required.
+
+        Transports that need the base64 JSON envelope build it on demand via
+        :meth:`_build_envelope`; those that stream the file (filesystem, REST)
+        avoid the extra in-memory copy entirely.
+        """
 
     def describe_destination(self) -> str:
         """Human-readable destination for audit logs (override as needed)."""
@@ -131,8 +136,11 @@ class FilesystemPusher(SegmentPusher):
     """
     Write segments to a watched directory (volume-mount container integration).
 
-    Both the PCAP file and a JSON envelope/manifest are written with 0o600
-    permissions into a 0o700 destination directory (STIG V-222425).
+    The PCAP file is streamed to the destination and accompanied by its JSON
+    metadata manifest; both are written with 0o600 permissions into a 0o700
+    destination directory (STIG V-222425). The base64 envelope used by the
+    network transports is intentionally not written here to avoid duplicating
+    the (potentially large) PCAP payload on disk.
     """
 
     transport = "filesystem"
@@ -144,17 +152,16 @@ class FilesystemPusher(SegmentPusher):
     def describe_destination(self) -> str:
         return self.dest_dir
 
-    def _deliver(self, segment: Segment, envelope: dict) -> None:
+    def _deliver(self, segment: Segment) -> None:
         seg_id = segment.metadata.get("segment_id", "segment")
         pcap_dest = os.path.join(self.dest_dir, os.path.basename(segment.pcap_path))
-        with open(pcap_dest, "wb") as fh:
-            fh.write(self._read_pcap_bytes(segment))
+        shutil.copyfile(segment.pcap_path, pcap_dest)
         stig.secure_file(pcap_dest)
 
-        envelope_dest = os.path.join(self.dest_dir, f"segment_{seg_id}.json")
-        with open(envelope_dest, "w", encoding="utf-8") as fh:
-            json.dump(envelope, fh, default=str)
-        stig.secure_file(envelope_dest)
+        manifest_dest = os.path.join(self.dest_dir, f"segment_{seg_id}.manifest.json")
+        with open(manifest_dest, "w", encoding="utf-8") as fh:
+            json.dump(segment.metadata, fh, default=str)
+        stig.secure_file(manifest_dest)
 
         # STIG V-222553: confirm the copied file matches the original checksum.
         if not stig.verify_checksum(pcap_dest, segment.checksum, self.audit,
@@ -200,7 +207,8 @@ class RedisPusher(SegmentPusher):
             )
         return self._client
 
-    def _deliver(self, segment: Segment, envelope: dict) -> None:
+    def _deliver(self, segment: Segment) -> None:
+        envelope = self._build_envelope(segment)
         client = self._get_client()
         client.xadd(self.stream, {
             "segment_id": str(envelope.get("segment_id")),
@@ -257,7 +265,8 @@ class KafkaPusher(SegmentPusher):
             self._producer = KafkaProducer(**config)
         return self._producer
 
-    def _deliver(self, segment: Segment, envelope: dict) -> None:
+    def _deliver(self, segment: Segment) -> None:
+        envelope = self._build_envelope(segment)
         producer = self._get_producer()
         future = producer.send(self.topic, envelope)
         future.get(timeout=30)
@@ -294,7 +303,7 @@ class RESTAPIPusher(SegmentPusher):
     def describe_destination(self) -> str:
         return self.url
 
-    def _deliver(self, segment: Segment, envelope: dict) -> None:
+    def _deliver(self, segment: Segment) -> None:
         session = stig.build_tls_session(
             client_cert=self.client_cert, client_key=self.client_key,
             ca_bundle=self.ca_bundle, allow_self_signed=self.allow_self_signed,
@@ -311,7 +320,7 @@ class RESTAPIPusher(SegmentPusher):
                             "application/vnd.tcpdump.pcap"),
             }
             data = {"sha256": segment.checksum,
-                    "segment_id": str(envelope.get("segment_id"))}
+                    "segment_id": str(segment.metadata.get("segment_id"))}
             response = session.post(self.url, files=files, data=data,
                                     headers=headers, timeout=self.timeout)
             response.raise_for_status()

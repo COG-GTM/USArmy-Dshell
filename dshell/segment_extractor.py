@@ -239,7 +239,12 @@ class SegmentExtractor:
         if self.encrypt:
             pcap_path = stig.encrypt_file(builder.pcap_path, self.audit)  # V-222659
             metadata["encrypted"] = True
-            metadata["sha256_encrypted"] = stig.sha256_file(pcap_path)
+            enc_checksum = stig.sha256_file(pcap_path)
+            metadata["sha256_encrypted"] = enc_checksum
+            # checksum must match the file at pcap_path (the encrypted file) so
+            # downstream integrity verification on push succeeds; the plaintext
+            # hash stays in metadata["sha256"] for reference.
+            checksum = enc_checksum
             encrypted = True
 
         manifest_path = os.path.join(

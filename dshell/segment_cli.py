@@ -75,12 +75,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _add_extract_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--input", help="Path to the input PCAP/PCAP-NG file.")
-    p.add_argument("--strategy", choices=VALID_STRATEGIES, default="connection",
+    # Overridable defaults are left as None here and filled in by
+    # _apply_hardcoded_defaults() so that config-file values can take effect.
+    p.add_argument("--strategy", choices=VALID_STRATEGIES, default=None,
                    help="Segmentation strategy (default: connection).")
-    p.add_argument("--output-dir", default="./segments",
-                   help="Directory for segment PCAPs and manifests.")
-    p.add_argument("--time-window", type=int, default=60,
-                   help="Time window (seconds) for the time strategy.")
+    p.add_argument("--output-dir", default=None,
+                   help="Directory for segment PCAPs and manifests "
+                        "(default: ./segments).")
+    p.add_argument("--time-window", type=int, default=None,
+                   help="Time window (seconds) for the time strategy "
+                        "(default: 60).")
     p.add_argument("--bpf", help="Optional BPF filter applied during reading.")
     p.add_argument("--count", type=int, help="Max number of packets to read.")
     p.add_argument("--protocols", help="Comma-separated protocol allow-list "
@@ -93,22 +97,41 @@ def _add_push_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--pusher", choices=PUSHERS,
                    help="Transport used to push segments.")
     p.add_argument("--dest", help="Destination (directory, broker, host or URL).")
-    p.add_argument("--topic", default="dshell-segments",
-                   help="Kafka/Redis topic or stream name.")
+    p.add_argument("--topic", default=None,
+                   help="Kafka/Redis topic or stream name "
+                        "(default: dshell-segments).")
     p.add_argument("--cert", help="mTLS client certificate (REST) / Kafka cert.")
     p.add_argument("--key", help="Private key for the client certificate.")
     p.add_argument("--ca-bundle", help="CA bundle for server verification.")
     p.add_argument("--allow-self-signed", action="store_true",
                    help="Disable TLS verification (logged as a security event).")
-    p.add_argument("--max-retries", type=int, default=3,
-                   help="Maximum push attempts before failing.")
+    p.add_argument("--max-retries", type=int, default=None,
+                   help="Maximum push attempts before failing (default: 3).")
+
+
+# Fallback values for options whose parser default is None so that an explicit
+# CLI flag > config-file value > hardcoded default precedence holds.
+_HARDCODED_DEFAULTS = {
+    "strategy": "connection",
+    "output_dir": "./segments",
+    "time_window": 60,
+    "topic": "dshell-segments",
+    "max_retries": 3,
+}
 
 
 def _apply_config_defaults(args: argparse.Namespace, config: dict) -> None:
-    """Config file values fill in any CLI argument left at its default/None."""
+    """Config file values fill in any CLI argument the user did not provide."""
     for key, value in config.items():
         attr = key.replace("-", "_")
         if hasattr(args, attr) and getattr(args, attr) in (None, False):
+            setattr(args, attr, value)
+
+
+def _apply_hardcoded_defaults(args: argparse.Namespace) -> None:
+    """Final fallback for overridable options left unset by CLI and config."""
+    for attr, value in _HARDCODED_DEFAULTS.items():
+        if hasattr(args, attr) and getattr(args, attr) is None:
             setattr(args, attr, value)
 
 
@@ -223,6 +246,7 @@ def main(argv=None) -> int:
 
     if args.config:
         _apply_config_defaults(args, stig.load_config(args.config, audit))
+    _apply_hardcoded_defaults(args)
 
     try:
         if args.command == "extract":

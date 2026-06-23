@@ -203,8 +203,10 @@ def test_encryption_roundtrip(sample_pcap, tmp_path, audit, monkeypatch):
         decrypted = stig.decrypt_file(seg.pcap_path,
                                       out_path=str(tmp_path / "dec.pcap"),
                                       audit_logger=audit)
-        # Decrypted content must match the original (pre-encryption) checksum.
-        assert stig.sha256_file(decrypted) == seg.checksum
+        # Decrypted content matches the original plaintext hash, while the
+        # Segment checksum tracks the encrypted file actually on disk.
+        assert stig.sha256_file(decrypted) == seg.metadata["sha256"]
+        assert seg.checksum == stig.sha256_file(seg.pcap_path)
 
 
 # ---------------------------------------------------------------------------
