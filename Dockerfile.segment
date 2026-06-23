@@ -1,0 +1,62 @@
+# Container image for the Dshell PCAP segment extractor/pusher.
+#
+# NOTE: the repository root already ships a `Dockerfile` for the main `dshell`
+# CLI. This separate `Dockerfile.segment` builds the segment extractor/pusher
+# tooling with DoD STIG hardening (non-root, no baked secrets, healthcheck).
+#
+# Build:  docker build -f Dockerfile.segment -t dshell-segment .
+# Run:    docker run --rm -v $PWD/data:/data dshell-segment extract \
+#             --input /data/capture.pcap --output-dir /data/segments
+
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv
+
+# Build dependencies for pcapy-ng (libpcap) and cryptography.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc g++ libpcap-dev libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv "${VIRTUAL_ENV}"
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+COPY . /src
+WORKDIR /src
+RUN pip install --no-cache-dir --upgrade pip wheel \
+    && pip install --no-cache-dir ".[kafka]"
+
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}"
+
+# Runtime libpcap only (no compilers in the final image).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpcap0.8 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+
+# STIG V-222432: run as a dedicated non-root user.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin dshell \
+    && mkdir -p /data \
+    && chown dshell:dshell /data
+USER dshell
+WORKDIR /data
+
+VOLUME ["/data"]
+
+# Container orchestration health check (verifies the CLI is importable/runnable).
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -m dshell.segment_cli --help > /dev/null 2>&1 || exit 1
+
+# No secrets are baked into the image; provide them via env vars / mounted files:
+#   DSHELL_SEGMENT_KEY, DSHELL_REDIS_PASSWORD, DSHELL_KAFKA_USERNAME, ...
+ENTRYPOINT ["python", "-m", "dshell.segment_cli"]
+CMD ["--help"]

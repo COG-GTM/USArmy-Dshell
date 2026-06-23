@@ -25,10 +25,21 @@ setup(
         "pyopenssl",
         "elasticsearch",
         "tabulate",
+        # Segment extractor/pusher tooling
+        "cryptography",  # AES-256-GCM encryption at rest (STIG V-222659)
+        "redis",         # RedisPusher
+        "requests",      # RESTAPIPusher
+        "pyyaml",        # config file parsing
     ],
+    extras_require={
+        # Optional message-bus transports for the segment pusher.
+        "kafka": ["kafka-python"],
+        "confluent": ["confluent-kafka"],
+    },
     entry_points={
         "console_scripts": [
             "dshell-decode = dshell.decode:main_command_line",
+            "dshell-segment = dshell.segment_cli:main",
         ],
         "dshell_plugins": [],
     },
