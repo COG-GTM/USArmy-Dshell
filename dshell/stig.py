@@ -176,19 +176,46 @@ def sanitize_exception(audit_logger: "AuditLogger", action: str, exc: Exception,
 # ---------------------------------------------------------------------------
 # STIG V-222596 - Input validation
 # ---------------------------------------------------------------------------
-def validate_pcap_path(path: str, audit_logger: "AuditLogger" = None) -> str:
+def safe_path(path: str, base: str = None, audit_logger: "AuditLogger" = None) -> str:
+    """
+    Canonicalize ``path`` and reject directory traversal (STIG V-222596).
+
+    The path is resolved to an absolute, symlink-free location with
+    :func:`os.path.realpath`. Any ``..`` traversal component is rejected. When a
+    ``base`` directory is supplied, the resolved path MUST remain inside that
+    base (verified with :func:`os.path.commonpath`), preventing CLI arguments
+    from escaping the intended directory. Returns the validated absolute path;
+    all downstream filesystem access must use this return value, never the raw
+    input.
+    """
+    if not path:
+        _reject_input(audit_logger, path, "empty path")
+    if ".." in str(path).replace("\\", "/").split("/"):
+        _reject_input(audit_logger, path, "path traversal sequence rejected")
+
+    resolved = os.path.realpath(path)
+
+    if base is not None:
+        base_resolved = os.path.realpath(base)
+        if os.path.commonpath([base_resolved, resolved]) != base_resolved:
+            _reject_input(audit_logger, path,
+                          f"resolved path escapes permitted base {base!r}")
+
+    return resolved
+
+
+def validate_pcap_path(path: str, audit_logger: "AuditLogger" = None,
+                       base: str = None) -> str:
     """
     Validate a PCAP input path (STIG V-222596).
 
     Rejects path traversal, requires a regular file, and verifies the file
-    magic bytes match a PCAP or PCAP-NG format before processing.
+    magic bytes match a PCAP or PCAP-NG format before processing. An optional
+    ``base`` confines the input to a permitted directory.
 
     Returns the resolved absolute path or raises STIGComplianceError.
     """
-    if not path or ".." in os.path.normpath(path).split(os.sep):
-        _reject_input(audit_logger, path, "path traversal sequence rejected")
-
-    resolved = os.path.realpath(path)
+    resolved = safe_path(path, base=base, audit_logger=audit_logger)
     if not os.path.exists(resolved):
         _reject_input(audit_logger, path, "file does not exist")
     if not os.path.isfile(resolved):
@@ -237,15 +264,17 @@ def verify_umask(audit_logger: "AuditLogger" = None) -> int:
 
 def secure_file(path: str) -> str:
     """Set a created file to 0o600 (STIG V-222425)."""
-    os.chmod(path, SECURE_FILE_MODE)
-    return path
+    resolved = safe_path(path)
+    os.chmod(resolved, SECURE_FILE_MODE)
+    return resolved
 
 
 def secure_dir(path: str) -> str:
     """Create (if needed) and set a directory to 0o700 (STIG V-222425)."""
-    os.makedirs(path, exist_ok=True)
-    os.chmod(path, SECURE_DIR_MODE)
-    return path
+    resolved = safe_path(path)
+    os.makedirs(resolved, exist_ok=True)
+    os.chmod(resolved, SECURE_DIR_MODE)
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +322,7 @@ def load_config(path: str, audit_logger: "AuditLogger" = None) -> dict:
     readable (STIG V-222404). Credentials must come from such restricted files
     or the environment, never from hardcoded values.
     """
-    resolved = os.path.realpath(path)
+    resolved = safe_path(path, audit_logger=audit_logger)
     if not os.path.isfile(resolved):
         raise STIGComplianceError(
             f"STIG {STIG_NO_HARDCODED_CREDS}: config file not found: {path!r}")
@@ -443,8 +472,11 @@ def build_tls_session(client_cert: str = None, client_key: str = None,
     Build a ``requests.Session`` that enforces TLS 1.2+ and certificate
     verification (STIG V-222602). Optionally configures an mTLS client cert.
 
-    Self-signed certificates are rejected by default; enabling
-    ``allow_self_signed`` disables verification and emits a warning log.
+    Server certificate verification is ALWAYS enforced. Self-signed certificates
+    are rejected by default; the ``allow_self_signed`` override does not disable
+    verification -- instead it pins trust to the certificate(s) supplied in
+    ``ca_bundle`` (so a private/self-signed CA can be trusted explicitly). When
+    ``allow_self_signed`` is set, ``ca_bundle`` is therefore required.
     """
     import requests
     from requests.adapters import HTTPAdapter
@@ -469,15 +501,20 @@ def build_tls_session(client_cert: str = None, client_key: str = None,
         session.cert = (client_cert, client_key) if client_key else client_cert
 
     if allow_self_signed:
-        msg = (f"STIG {STIG_ENCRYPTION_TRANSIT}: certificate verification DISABLED "
-               f"(allow_self_signed=True). This weakens transport security.")
+        if not ca_bundle:
+            raise STIGComplianceError(
+                f"STIG {STIG_ENCRYPTION_TRANSIT}: allow_self_signed requires a "
+                f"ca_bundle to pin trust to; refusing to disable verification")
+        msg = (f"STIG {STIG_ENCRYPTION_TRANSIT}: trusting pinned self-signed CA "
+               f"bundle {ca_bundle!r}; server certificate verification remains on")
         logger.warning(msg)
         if audit_logger:
             audit_logger.security_event("tls_config", error=msg,
                                         stig=STIG_ENCRYPTION_TRANSIT)
-        session.verify = False
-    else:
-        session.verify = ca_bundle if ca_bundle else True
+
+    # Verification is never disabled: pin to the supplied CA bundle when given,
+    # otherwise use the system trust store.
+    session.verify = ca_bundle if ca_bundle else True
 
     return session
 

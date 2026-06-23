@@ -153,18 +153,20 @@ def _do_extract(args: argparse.Namespace, audit: stig.AuditLogger):
 
 def _load_segments_from_dir(segments_dir: str) -> list:
     """Reconstruct Segment objects from extracted manifests in a directory."""
+    # STIG V-222596: confine all reads to the resolved segments directory.
+    base = stig.safe_path(segments_dir)
     segments = []
-    for manifest_path in sorted(glob(os.path.join(segments_dir, "*.manifest.json"))):
-        with open(manifest_path, "r", encoding="utf-8") as fh:
+    for manifest_path in sorted(glob(os.path.join(base, "*.manifest.json"))):
+        safe_manifest = stig.safe_path(manifest_path, base=base)
+        with open(safe_manifest, "r", encoding="utf-8") as fh:
             metadata = json.load(fh)
         seg_id = metadata.get("segment_id")
-        pcap_path = os.path.join(segments_dir, f"segment_{seg_id}.pcap")
         encrypted = bool(metadata.get("encrypted"))
-        if encrypted:
-            pcap_path += ".enc"
+        filename = f"segment_{seg_id}.pcap" + (".enc" if encrypted else "")
+        pcap_path = stig.safe_path(os.path.join(base, filename), base=base)
         if not os.path.isfile(pcap_path):
             logger.warning("Manifest %s references missing PCAP %s; skipping",
-                           manifest_path, pcap_path)
+                           safe_manifest, pcap_path)
             continue
         checksum = (metadata.get("sha256_encrypted") if encrypted
                     else metadata.get("sha256"))

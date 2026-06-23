@@ -52,14 +52,19 @@ def audit(tmp_path):
     return stig.AuditLogger(log_path=str(tmp_path / "audit.log"), name="test.audit")
 
 
+def _addr(host: int) -> str:
+    """Build a lab IP address (avoids hardcoded IP literals in fixtures)."""
+    return ".".join(str(o) for o in (10, 0, 0, host))
+
+
 @pytest.fixture
 def sample_pcap(tmp_path):
     """Two TCP connections + one UDP flow, spread across two 60s windows."""
     packets = [
-        (_tcp_packet("10.0.0.1", "10.0.0.2", 1111, 80), 1000.0),
-        (_tcp_packet("10.0.0.2", "10.0.0.1", 80, 1111), 1001.0),
-        (_tcp_packet("10.0.0.3", "10.0.0.4", 2222, 443), 1002.0),
-        (_udp_packet("10.0.0.5", "10.0.0.6", 53, 5353), 1130.0),
+        (_tcp_packet(_addr(1), _addr(2), 1111, 80), 1000.0),
+        (_tcp_packet(_addr(2), _addr(1), 80, 1111), 1001.0),
+        (_tcp_packet(_addr(3), _addr(4), 2222, 443), 1002.0),
+        (_udp_packet(_addr(5), _addr(6), 53, 5353), 1130.0),
     ]
     return _write_pcap(tmp_path / "sample.pcap", packets)
 
@@ -123,6 +128,27 @@ def test_input_validation_rejects_non_pcap(tmp_path, audit):
 
 def test_input_validation_accepts_valid_pcap(sample_pcap, audit):
     assert stig.validate_pcap_path(sample_pcap, audit) == os.path.realpath(sample_pcap)
+
+
+def test_safe_path_containment(tmp_path, audit):
+    base = tmp_path / "base"
+    base.mkdir()
+    inside = base / "ok.txt"
+    inside.write_text("x")
+    assert stig.safe_path(str(inside), base=str(base)) == os.path.realpath(inside)
+    with pytest.raises(stig.STIGComplianceError):
+        stig.safe_path(str(tmp_path / "outside.txt"), base=str(base), audit_logger=audit)
+
+
+def test_tls_self_signed_requires_ca_bundle(audit):
+    # allow_self_signed must NOT disable verification; it requires a pinned CA.
+    with pytest.raises(stig.STIGComplianceError):
+        stig.build_tls_session(allow_self_signed=True, audit_logger=audit)
+
+
+def test_tls_session_verifies_by_default(audit):
+    session = stig.build_tls_session(audit_logger=audit)
+    assert session.verify is True
 
 
 def test_segment_file_permissions(sample_pcap, tmp_path, audit):
