@@ -1,0 +1,73 @@
+# Development / testing compose file for the Dshell segment extractor/pusher.
+#
+# Bring up only the extractor:        docker compose up segment-extractor
+# Include the optional Redis queue:   docker compose --profile redis up
+# Include the optional Kafka bus:     docker compose --profile kafka up
+#
+# All services run on an isolated bridge network (no host networking) and as
+# non-root users (STIG hardening).
+
+services:
+  segment-extractor:
+    build:
+      context: .
+      dockerfile: Dockerfile.segment
+    image: dshell-segment:latest
+    # Override with any segment_cli subcommand, e.g.:
+    #   command: ["extract", "--input", "/data/capture.pcap",
+    #             "--output-dir", "/data/segments", "--strategy", "connection"]
+    command: ["--help"]
+    environment:
+      # Secrets are injected from the host environment; never baked into images.
+      DSHELL_SEGMENT_KEY: "${DSHELL_SEGMENT_KEY:-}"
+      DSHELL_REDIS_PASSWORD: "${DSHELL_REDIS_PASSWORD:-}"
+      DSHELL_AUDIT_LOG: "/data/audit/audit.log"
+    volumes:
+      - ./data/pcaps:/data/pcaps:ro
+      - ./data/segments:/data/segments
+      - ./data/audit:/data/audit
+    networks:
+      - dshell-net
+    restart: "no"
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["redis"]
+    # Run as the built-in non-root redis user.
+    user: "redis"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - dshell-net
+    expose:
+      - "6379"
+
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    profiles: ["kafka"]
+    user: "1001"
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    networks:
+      - dshell-net
+    expose:
+      - "2181"
+
+  kafka:
+    image: bitnami/kafka:3.7
+    profiles: ["kafka"]
+    user: "1001"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_CFG_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    networks:
+      - dshell-net
+    expose:
+      - "9092"
+
+networks:
+  dshell-net:
+    driver: bridge

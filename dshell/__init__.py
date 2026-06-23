@@ -12,3 +12,9 @@ from .output.htmlout import HTMLOutput
 from .output.jsonout import JSONOutput
 from .output.netflowout import NetflowOutput
 from .output.pcapout import PCAPOutput
+
+# Segment extraction / push tooling for the unified containerized platform
+from .segment_extractor import SegmentExtractor
+from .segment_pusher import (
+    SegmentPusher, FilesystemPusher, RedisPusher, KafkaPusher, RESTAPIPusher,
+)
