@@ -614,9 +614,15 @@ class ConnectionPlugin(PacketPlugin):
                 for blob in connection.blobs:
                     if not blob.hidden:
                         yield from blob.packets
+                    # Release reassembly state for each blob after its
+                    # packets have been yielded (or skipped), so memory
+                    # is freed promptly while preserving hidden flags.
+                    blob.clear_caches()
             else:
                 # TODO: Perhaps have a "hidden" field on the packet itself?
                 yield from connection.packets
+            # Clear the connection's blob cache after all blobs are consumed.
+            connection._blob_cache = []
 
     def consume_packet(self, packet: "Packet"):
         # First run super() to handle the individual packets.
@@ -695,14 +701,18 @@ class ConnectionPlugin(PacketPlugin):
             self._close_connection(conn)
 
         # Enforce per-connection blob cap.
-        elif self.maxblobs != float("inf") and len(conn._blob_cache) > self.maxblobs:
-            logger.debug(
-                f"Connection {conn.addr} exceeded maxblobs "
-                f"({self.maxblobs}), force-closing."
-            )
-            for blob in conn.blobs:
-                self._blob_handler(conn, blob)
-            self._close_connection(conn)
+        # Note: add_packet() clears _blob_cache, so we must consume the
+        # blobs property (which regenerates the cache) before checking.
+        elif self.maxblobs != float("inf"):
+            blobs = list(conn.blobs)
+            if len(blobs) > self.maxblobs:
+                logger.debug(
+                    f"Connection {conn.addr} exceeded maxblobs "
+                    f"({self.maxblobs}), force-closing."
+                )
+                for blob in blobs:
+                    self._blob_handler(conn, blob)
+                self._close_connection(conn)
 
         # Check for and close old connections every so often.
         # Uses total packets seen by _connection_handler (not only
@@ -758,11 +768,6 @@ class ConnectionPlugin(PacketPlugin):
             except Exception as e:
                 print_handler_exception(e, self, 'connection_close_handler')
 
-        # Release reassembly state for handled blobs so memory is freed
-        # promptly instead of waiting for garbage collection.
-        for blob in conn._blob_cache:
-            blob.clear_caches()
-        conn._blob_cache = []
         return True
 
     def _timeout_connections(self, timestamp: datetime.datetime):
