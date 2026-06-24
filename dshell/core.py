@@ -150,6 +150,12 @@ class PacketPlugin(object):
 
         # a holder for IP packet fragments when attempting to reassemble them
         self._packet_fragments = defaultdict(dict)
+        # timestamps for fragment sets, used for stale-fragment eviction
+        self._packet_fragment_times = {}
+        # max age (seconds) for incomplete fragment sets before eviction
+        self.fragment_timeout = 30
+        # max number of incomplete fragment sets held at once
+        self.max_fragment_sets = 5000
 
     def produce_packets(self) -> Iterable["Packet"]:
         """
@@ -173,6 +179,7 @@ class PacketPlugin(object):
         """
         self._packet_queue = []
         self._packet_fragments = defaultdict(dict)
+        self._packet_fragment_times = {}
 
     def write(self, *args, **kwargs):
         """
@@ -268,17 +275,21 @@ class PacketPlugin(object):
         pkt = packet.pkt
         ipp = pkt.upper_layer
         if isinstance(ipp, ip.IP):  # IPv4
-            f = self._packet_fragments[(ipp.src, ipp.dst, ipp.id)]
+            frag_key = (ipp.src, ipp.dst, ipp.id)
+            f = self._packet_fragments[frag_key]
             f[ipp.offset] = packet
+            self._packet_fragment_times[frag_key] = packet.ts
 
             if not ipp.flags & 0x1: # If no more fragments (MF)
                 if len(f) <= 1 and 0 in f:
                     # If only one unfragmented packet, return that packet
-                    del self._packet_fragments[(ipp.src, ipp.dst, ipp.id)]
+                    del self._packet_fragments[frag_key]
+                    self._packet_fragment_times.pop(frag_key, None)
                     return f[0]
                 elif 0 not in f:
                     logger.debug(f"Missing first fragment of fragmented packet. Dropping ({packet.sip} -> {packet.dip}: {ipp.id}:{ipp.flags}:{ipp.offset})")
-                    del self._packet_fragments[(ipp.src, ipp.dst, ipp.id)]
+                    del self._packet_fragments[frag_key]
+                    self._packet_fragment_times.pop(frag_key, None)
                     return None
                 fkeys = sorted(f.keys())
                 data = b''
@@ -288,7 +299,8 @@ class PacketPlugin(object):
                 newip = ip.IP(firstpacket.pkt.upper_layer.header_bytes + data)
                 newip.bin(update_auto_fields=True) # refresh checksum
                 firstpacket.pkt.upper_layer = newip
-                del self._packet_fragments[(ipp.src, ipp.dst, ipp.id)]
+                del self._packet_fragments[frag_key]
+                self._packet_fragment_times.pop(frag_key, None)
                 return Packet(
                     firstpacket.pkt.__len__,
                     firstpacket.pkt,
@@ -296,9 +308,44 @@ class PacketPlugin(object):
                     firstpacket.frame
                 )
 
+            # Evict stale/oversized fragment buffers periodically
+            self._evict_stale_fragments(packet.ts)
+
         elif isinstance(pkt, ip6.IP6):  # IPv6
             # TODO handle IPv6 offsets https://en.wikipedia.org/wiki/IPv6_packet#Fragment
             return pkt
+
+    def _evict_stale_fragments(self, current_ts):
+        """
+        Drops incomplete fragment sets that have exceeded fragment_timeout
+        or when the total number of tracked fragment sets exceeds
+        max_fragment_sets.
+        """
+        # Time-based eviction
+        if self.fragment_timeout and self._packet_fragment_times:
+            stale_keys = [
+                k for k, ts in self._packet_fragment_times.items()
+                if (current_ts - ts) > self.fragment_timeout
+            ]
+            for k in stale_keys:
+                logger.debug(
+                    f"Evicting stale fragment set {k} "
+                    f"(age {current_ts - self._packet_fragment_times[k]:.1f}s)"
+                )
+                self._packet_fragments.pop(k, None)
+                self._packet_fragment_times.pop(k, None)
+
+        # Size-based eviction: drop oldest sets when over the cap
+        if len(self._packet_fragments) > self.max_fragment_sets:
+            sorted_keys = sorted(
+                self._packet_fragment_times,
+                key=self._packet_fragment_times.get,
+            )
+            excess = len(self._packet_fragments) - self.max_fragment_sets
+            for k in sorted_keys[:excess]:
+                logger.debug(f"Evicting excess fragment set {k}")
+                self._packet_fragments.pop(k, None)
+                self._packet_fragment_times.pop(k, None)
 
     def handle_plugin_options(self):
         """
@@ -507,6 +554,11 @@ class ConnectionPlugin(PacketPlugin):
         # it defaults to infinite, but this should be lowered for huge datasets
         self.maxblobs = float("inf")  # infinite
 
+        # maximum number of packets a single connection may accumulate
+        # before it is force-closed and its caches freed.
+        # 0 = unlimited (no cap).
+        self.max_packets = 0
+
         # how long do we wait before deciding a connection is "finished"
         # time is checked by iterating over cached connections and checking if
         # the timestamp of the connection's last packet is older than the
@@ -518,6 +570,10 @@ class ConnectionPlugin(PacketPlugin):
         # If the maximum number of connections is met, the oldest connections
         # will be force closed.
         self.max_open_connections = 1000
+
+        # Internal counter for total packets entering _connection_handler,
+        # used to drive timeout checks independent of handled_packet_count.
+        self._total_conn_packets = 0
 
     def _postmodule(self):
         """
@@ -558,9 +614,15 @@ class ConnectionPlugin(PacketPlugin):
                 for blob in connection.blobs:
                     if not blob.hidden:
                         yield from blob.packets
+                    # Release reassembly state for each blob after its
+                    # packets have been yielded (or skipped), so memory
+                    # is freed promptly while preserving hidden flags.
+                    blob.clear_caches()
             else:
                 # TODO: Perhaps have a "hidden" field on the packet itself?
                 yield from connection.packets
+            # Clear the connection's blob cache after all blobs are consumed.
+            connection._blob_cache = []
 
     def consume_packet(self, packet: "Packet"):
         # First run super() to handle the individual packets.
@@ -628,14 +690,36 @@ class ConnectionPlugin(PacketPlugin):
                 self._blob_handler(conn, blob)
             self._close_connection(conn, full=True)
 
-        # TODO: Switch to a max_packets option.
-        # elif len(conn.blobs) > self.maxblobs:
-        #     # Max blobs hit, so we will run connection_handler and decode.py
-        #     # will clear the connection's blob cache
-        #     self._close_connection(conn)
+        # Enforce per-connection packet cap.
+        elif self.max_packets and len(conn.packets) >= self.max_packets:
+            logger.debug(
+                f"Connection {conn.addr} exceeded max_packets "
+                f"({self.max_packets}), force-closing."
+            )
+            for blob in conn.blobs:
+                self._blob_handler(conn, blob)
+            self._close_connection(conn)
+
+        # Enforce per-connection blob cap.
+        # Note: add_packet() clears _blob_cache, so we must consume the
+        # blobs property (which regenerates the cache) before checking.
+        elif self.maxblobs != float("inf"):
+            blobs = list(conn.blobs)
+            if len(blobs) > self.maxblobs:
+                logger.debug(
+                    f"Connection {conn.addr} exceeded maxblobs "
+                    f"({self.maxblobs}), force-closing."
+                )
+                for blob in blobs:
+                    self._blob_handler(conn, blob)
+                self._close_connection(conn)
 
         # Check for and close old connections every so often.
-        if self.handled_packet_count.value % self.timeout_frequency == 0:
+        # Uses total packets seen by _connection_handler (not only
+        # handled_packet_count) to guarantee timeout checks even when
+        # few packets pass through packet_handler.
+        self._total_conn_packets += 1
+        if self._total_conn_packets % self.timeout_frequency == 0:
             self._timeout_connections(packet.dt)
 
     def _close_connection(self, conn, full=False):
@@ -683,6 +767,7 @@ class ConnectionPlugin(PacketPlugin):
                 self.connection_close_handler(conn)
             except Exception as e:
                 print_handler_exception(e, self, 'connection_close_handler')
+
         return True
 
     def _timeout_connections(self, timestamp: datetime.datetime):
@@ -729,6 +814,7 @@ class ConnectionPlugin(PacketPlugin):
         self._connection_queue = []
         self._connection_tracker = {}
         self._production_ready = False
+        self._total_conn_packets = 0
 
     # TODO: Have blobs handled with consumer/producer model just like Packets and Connections?
     def _blob_handler(self, conn: "Connection", blob: "Blob"):
@@ -1879,6 +1965,20 @@ class Blob(object):
         del d['hidden']
         del d['packets']
         return d
+
+    def clear_caches(self):
+        """
+        Releases reassembly state (sequence map, cached data/segments,
+        and the packet list) so memory is freed promptly after a blob
+        has been handled.  Metadata (addr, timestamps, direction, etc.)
+        is preserved.
+        """
+        self._seq_map = {}
+        self._data = None
+        self._segments = None
+        self.packets = []
+        self.seq_min = 0
+        self.seq_max = 0
 
 
     # TODO: Trying to determine if we should do this or take into account acknowledgement numbers

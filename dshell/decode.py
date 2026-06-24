@@ -261,6 +261,16 @@ def main(plugin_args=None, **kwargs):
             # Set max number of allowed open connections
             if t := kwargs.get("connmax"):
                 plugin.max_open_connections = int(t)
+            # Set max packets per connection
+            if t := kwargs.get("connmaxpkts"):
+                plugin.max_packets = int(t)
+
+        # Set fragment eviction parameters (PacketPlugin level)
+        if hasattr(plugin, "fragment_timeout"):
+            if t := kwargs.get("fragtimeout"):
+                plugin.fragment_timeout = int(t)
+            if t := kwargs.get("fragmaxsets"):
+                plugin.max_fragment_sets = int(t)
 
         # Set the BPF filters
         # Each plugin has its own default BPF that will be extended or replaced
@@ -584,6 +594,15 @@ def main_command_line():
     parser.add_argument('--conn-max-open', dest='connmax', type=int,
                       metavar="NUMBER", default=1000,
                       help="Number of connections to hold in an open state before Dshell begins closing the oldest (default: 1000)")
+    parser.add_argument('--conn-max-packets', dest='connmaxpkts', type=int,
+                      metavar="NUMBER", default=0,
+                      help="Max packets per connection before force-closing it. 0 = unlimited (default: 0)")
+    parser.add_argument('--frag-timeout', dest='fragtimeout', type=int,
+                      metavar="SECONDS", default=30,
+                      help="Seconds before incomplete IP fragment sets are evicted (default: 30)")
+    parser.add_argument('--frag-max-sets', dest='fragmaxsets', type=int,
+                      metavar="NUMBER", default=5000,
+                      help="Max incomplete IP fragment sets held in memory (default: 5000)")
 
     multiprocess_group = parser.add_argument_group("multiprocessing arguments")
     multiprocess_group.add_argument('-P', '--parallel', dest='multiprocessing', action='store_true',
