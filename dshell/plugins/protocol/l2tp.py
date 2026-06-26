@@ -71,6 +71,13 @@ Examples:
             bpf="udp port 1701",
             output=AlertOutput(label=__name__),
             author="devin",
+            optiondict={
+                'quiet': {
+                    'action': 'store_true',
+                    'default': False,
+                    'help': 'Suppress per-packet alerts (useful when chaining with downstream plugins)'
+                },
+            },
         )
 
     def packet_handler(self, pkt):
@@ -135,17 +142,19 @@ Examples:
             )
             return pkt
 
-        # Log data session detection
-        self.write(
-            **pkt.info(),
-            dir_arrow="->",
-            msg="L2TPv2 data: tunnel={} session={} outer={}:{}<->{}:{}".format(
-                tunnel_id, session_id, pkt.sip, pkt.sport, pkt.dip, pkt.dport
-            ),
-        )
-
         # Remaining payload is PPP frame
-        return self._strip_ppp_and_produce(pkt, payload[offset:])
+        result = self._strip_ppp_and_produce(pkt, payload[offset:])
+
+        if result is not pkt and not getattr(self, 'quiet', False):
+            self.write(
+                **pkt.info(),
+                dir_arrow="->",
+                msg="L2TPv2 data: tunnel={} session={} outer={}:{}<->{}:{}".format(
+                    tunnel_id, session_id, pkt.sip, pkt.sport, pkt.dip, pkt.dport
+                ),
+            )
+
+        return result
 
     def _handle_v3(self, pkt, payload, offset, flags_ver):
         """Handle L2TP v3 over UDP header parsing."""
@@ -177,17 +186,49 @@ Examples:
         # since cookie length is negotiated and not self-describing.
         # For basic handling, assume no cookie.
 
-        self.write(
-            **pkt.info(),
-            dir_arrow="->",
-            msg="L2TPv3 data: session={} outer={}:{}<->{}:{}".format(
-                session_id, pkt.sip, pkt.sport, pkt.dip, pkt.dport
-            ),
-        )
+        # Try PPP first, then fall back to raw IP
+        inner_payload = payload[offset:]
+        result = self._strip_ppp_and_produce(pkt, inner_payload)
 
-        # Remaining payload is PPP frame (or raw frame depending on PW type)
-        # Try PPP first, fall back to raw IP
-        return self._strip_ppp_and_produce(pkt, payload[offset:])
+        if result is pkt:
+            # PPP parsing failed — try interpreting as raw IP
+            result = self._try_raw_ip(pkt, inner_payload)
+
+        if result is not pkt and not getattr(self, 'quiet', False):
+            self.write(
+                **pkt.info(),
+                dir_arrow="->",
+                msg="L2TPv3 data: session={} outer={}:{}<->{}:{}".format(
+                    session_id, pkt.sip, pkt.sport, pkt.dip, pkt.dport
+                ),
+            )
+
+        return result
+
+    def _try_raw_ip(self, original_pkt, raw_payload):
+        """
+        Attempt to parse payload directly as an IPv4 or IPv6 packet.
+        Used as fallback for L2TPv3 pseudowires that carry raw IP frames.
+        """
+        if not raw_payload or len(raw_payload) < 1:
+            return original_pkt
+
+        # Determine IP version from first nibble
+        version = (raw_payload[0] >> 4) & 0x0F
+        if version == 4:
+            try:
+                inner_ip = ip.IP(raw_payload)
+                return self._wrap_inner_ip(original_pkt, inner_ip, ethernet.ETH_TYPE_IP)
+            except Exception:
+                pass
+        elif version == 6:
+            try:
+                inner_ip = ip6.IP6(raw_payload)
+                return self._wrap_inner_ip(original_pkt, inner_ip, ethernet.ETH_TYPE_IP6)
+            except Exception:
+                pass
+
+        return original_pkt
 
     def _strip_ppp_and_produce(self, original_pkt, ppp_payload):
         """
@@ -233,31 +274,33 @@ Examples:
             except Exception:
                 logger.debug("Failed to parse inner IPv4 packet")
                 return original_pkt
+            return self._wrap_inner_ip(original_pkt, inner_ip, ethernet.ETH_TYPE_IP)
         elif ppp_proto == PPP_PROTO_IPV6:
             try:
                 inner_ip = ip6.IP6(inner_data)
             except Exception:
                 logger.debug("Failed to parse inner IPv6 packet")
                 return original_pkt
+            return self._wrap_inner_ip(original_pkt, inner_ip, ethernet.ETH_TYPE_IP6)
         else:
             logger.debug("Unsupported PPP protocol 0x%04x, skipping", ppp_proto)
             return original_pkt
 
-        # Wrap inner IP in a fake Ethernet frame so the Packet class can parse
-        # it properly (Dshell expects a link-layer wrapper).
+    def _wrap_inner_ip(self, original_pkt, inner_ip, eth_type):
+        """
+        Wrap a parsed inner IP packet in a synthetic Ethernet frame and
+        produce a new Packet object.
+        """
         eth_frame = ethernet.Ethernet(
             src=b"\x00\x00\x00\x00\x00\x00",
             dst=b"\x00\x00\x00\x00\x00\x00",
-            type=ethernet.ETH_TYPE_IP if ppp_proto == PPP_PROTO_IPV4 else ethernet.ETH_TYPE_IP6,
+            type=eth_type,
         )
         eth_frame.upper_layer = inner_ip
 
-        # Produce a new Packet object with the inner traffic
-        inner_packet = dshell.core.Packet(
-            pktlen=len(inner_data),
+        return dshell.core.Packet(
+            pktlen=len(inner_ip.bin()),
             packet=eth_frame,
             timestamp=original_pkt.ts,
             frame=original_pkt.frame,
         )
-
-        return inner_packet
