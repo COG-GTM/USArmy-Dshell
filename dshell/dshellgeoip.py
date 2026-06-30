@@ -53,7 +53,7 @@ class DshellGeoIP(object):
         """
         Looks up the IP and returns an ASN string.
         Example:
-            print geoip_asn_lookup("74.125.26.103")
+            print(geoip_asn_lookup("74.125.26.103"))
             "AS15169 Google LLC"
         """
         try:
@@ -92,7 +92,7 @@ class DshellGeoIP(object):
                         cc = cc.replace("None", "--")
 
                     except KeyError:
-                        pass
+                        cc = "--/--/--"
                 else:
                     cc = (location.represented_country.iso_code or
                           location.registered_country.iso_code or
@@ -127,15 +127,15 @@ class DshellFailedGeoIP(object):
         self.geoasndb = None
 
     def check_file_dates(self):
-        pass
+        pass  # No-op: no DB files to check when GeoIP data is unavailable
 
-    def geoip_country_lookup(self, ip):
+    def geoip_country_lookup(self, _ip):
         return "??"
 
-    def geoip_asn_lookup(self, ip):
+    def geoip_asn_lookup(self, _ip):
         return None
 
-    def geoip_location_lookup(self, ip):
+    def geoip_location_lookup(self, _ip):
         return ("??", None, None)
 
 
