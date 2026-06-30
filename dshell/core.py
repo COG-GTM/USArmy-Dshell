@@ -56,12 +56,16 @@ class DataError(Exception):
     pass
 
 
-# Create GeoIP refrence object
+# Create GeoIP reference object
 try:
     geoip = DshellGeoIP()
 except FileNotFoundError:
     logger.warning(
         "Could not find GeoIP data files! Country and ASN lookups will not be possible. Check README for instructions on where to find and install necessary data files.")
+    geoip = DshellFailedGeoIP()
+except Exception as e:
+    logger.warning(
+        "Could not initialize GeoIP: %s. Country and ASN lookups will not be possible.", e)
     geoip = DshellFailedGeoIP()
 
 
